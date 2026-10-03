@@ -172,24 +172,34 @@ async function switchTab(host: Host, tab: PaneTab): Promise<void> {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const root = $.plugin.root
+    const dataDir = async () => {
+      const custom = await $.env.get('CC_MUSIC_HOME')
+      if (custom) return custom
+      const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''
+      return `${home}/.cc-music`
+    }
     host = {
       fetch: (url, init) => $.http.fetch(url, init),
       readText: path => $.fs.read(path),
       run: (argv, timeoutMs) => $.process.run(argv, { timeoutMs }),
-      dataDir: async () => {
-        const custom = await $.env.get('CC_MUSIC_HOME')
-        if (custom) return custom
-        const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''
-        return `${home}/.cc-music`
-      },
+      dataDir,
       launcher: async () => {
+        const node = (await $.env.get('CC_MUSIC_NODE')) ?? 'node'
+        const configured = await $.env.get('CC_MUSIC_DAEMON')
+        if (configured) return { node, script: configured }
         // 插件目录可能是指向仓库的链接，先解析真实路径；daemon 在仓库的 daemon/ 下
         const stat = await $.fs.stat(root, { resolve: true }).catch(() => undefined)
         const repo = (stat?.realPath ?? root).replace(/[\\/]+$/, '').replace(/[\\/][^\\/]+$/, '')
-        return {
-          node: (await $.env.get('CC_MUSIC_NODE')) ?? 'node',
-          script: (await $.env.get('CC_MUSIC_DAEMON')) ?? `${repo}/daemon/src/launch.ts`,
+        const beside = `${repo}/daemon/src/launch.ts`
+        if (await $.fs.exists(beside)) return { node, script: beside }
+        // 插件被拷到了别处（比如会话的 mods 目录）：用 daemon 上次启动时记下的位置
+        try {
+          const install = JSON.parse(await $.fs.read(`${await dataDir()}/install.json`)) as { launch?: string }
+          if (install.launch) return { node, script: install.launch }
+        } catch {
+          // 还没有 install.json
         }
+        throw new Error(`找不到 cc-music daemon（${beside}）。设置环境变量 CC_MUSIC_DAEMON 指向 daemon/src/launch.ts`)
       },
       sleep: ms => $.clock.sleep(ms),
       getPlayer: () => read($, playerAtom),

@@ -2,13 +2,14 @@
 import { randomBytes } from 'node:crypto'
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
+import { fileURLToPath } from 'node:url'
 
 import { loadConfig, resolveTool } from './config.ts'
 import { CoverService } from './cover.ts'
 import { Library } from './library.ts'
 import { log } from './log.ts'
 import { LyricsService } from './lyrics/index.ts'
-import { DAEMON_FILE, VERSION } from './paths.ts'
+import { DAEMON_FILE, INSTALL_FILE, VERSION } from './paths.ts'
 import { Player } from './player/player.ts'
 import type { DaemonInfo } from './protocol.ts'
 import { ProviderRegistry } from './providers/index.ts'
@@ -44,6 +45,8 @@ server.listen(0, '127.0.0.1', () => {
   const { port } = server.address() as AddressInfo
   const info: DaemonInfo = { pid: process.pid, port, token, version: VERSION, startedAt: new Date().toISOString() }
   writeFileSync(DAEMON_FILE, JSON.stringify(info, null, 2), { mode: 0o600 })
+  const install = { launch: fileURLToPath(new URL('./launch.ts', import.meta.url)), version: VERSION }
+  writeFileSync(INSTALL_FILE, `${JSON.stringify(install, null, 2)}\n`)
   log('info', `daemon ${VERSION} 已启动，pid ${process.pid}，端口 ${port}`)
 })
 

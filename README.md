@@ -128,4 +128,6 @@ npm run daemon     # 前台运行 daemon（调试用）
 - mod 的约束：`$` 只能在 hook 里直接调用，不能传给其他函数，所以 `register.tsx` 在 `session.start` 里把能力包成 `Host`（见 `hooks/host.ts`）；`$.state` 的 atom 必须声明在使用它的文件里
 - 面板必须由命令或按钮 hook 自己的 `$` 调 `$.ui.open`，引擎才认作“用户要求的”、任何宽度都摆出来；用 `session.start` 里存下的 `$` 打开会被当成插件自己弹的，要 144 列才显示
 - 面板的画法在 `hooks/view.tsx`（纯函数，不碰 `$`），状态和动作在 `register.tsx`
+- 开发时用 `claude --plugin-dir mod` 直接加载项目里的 mod，改了就热重载。不要用目录 junction 把 mod 链进会话的 mods 目录：Windows 上热重载监视不到 junction 背后的改动，会话会一直跑旧代码
+- mod 不在仓库里时（例如被拷到别处），靠 `~/.cc-music/install.json`（daemon 每次启动时写）找到 `daemon/src/launch.ts`；也可以用环境变量 `CC_MUSIC_DAEMON` 指定
 - 在 Git Bash 里运行 `claude -p "/music ..."` 时先 `export MSYS_NO_PATHCONV=1`，否则 `/music` 会被改写成 Windows 路径
