@@ -1,21 +1,44 @@
-// cc-music mod 入口：注册 /music 命令和给模型的 music 工具，轮询 daemon，画输入框上方的迷你播放器。
+// cc-music mod 入口：注册 /music 命令和给模型的 music 工具，轮询 daemon，
+// 画输入框上方的迷你播放器和 cc-music 面板。
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import type { PlayerCommand, PlayerSnapshot } from '../types'
+import type { PaneTab, PlayerCommand, PlayerSnapshot, Track } from '../types'
 import * as daemon from './daemon.ts'
 import { formatTime, progressBar, trackLabel } from './format.ts'
 import { errorText, type Host } from './host.ts'
-import { runMusic, runTool, send, type ToolInput } from './music.ts'
+import {
+  enqueue,
+  playNow,
+  refreshLibrary,
+  runMusic,
+  runTool,
+  searchTracks,
+  send,
+  syncTrackExtras,
+  toggleFavorite,
+  type ToolInput,
+} from './music.ts'
+import { PaneView, type PaneActions } from './view.tsx'
 
-// $.state 里的值：热重载后仍在，迷你播放器从这里读。引擎要求它们在使用它们的文件里声明
+// $.state 里的值：热重载后仍在，画面从这里读。引擎要求它们在使用它们的文件里声明
 const playerAtom = atom({ plugin: 'cc-music', key: 'player' } as const, null)
 const lastSearchAtom = atom({ plugin: 'cc-music', key: 'lastSearch' } as const, null)
 const bandHiddenAtom = atom({ plugin: 'cc-music', key: 'isBandHidden' } as const, false)
+const paneOpenAtom = atom({ plugin: 'cc-music', key: 'isPaneOpen' } as const, false)
+const paneTabAtom = atom({ plugin: 'cc-music', key: 'paneTab' } as const, 'now')
+const searchAtom = atom({ plugin: 'cc-music', key: 'search' } as const, { query: '', isSearching: false, error: null })
+const lyricsAtom = atom({ plugin: 'cc-music', key: 'lyrics' } as const, null)
+const coverAtom = atom({ plugin: 'cc-music', key: 'cover' } as const, null)
+const libraryAtom = atom({ plugin: 'cc-music', key: 'library' } as const, null)
+const daemonVersionAtom = atom({ plugin: 'cc-music', key: 'daemonVersion' } as const, null)
 
 const COMMAND = 'music'
 const TOOL = 'music'
 const TOOL_NAME = 'mcp__cc-music__music'
+const PANE = 'cc-music'
+/** 面板在输入框上方展开时想要的高度 */
+const PANE_ROWS = 24
 
 /** 播放中每秒取一次状态；空闲时每 IDLE_EVERY 秒一次 */
 const POLL_MS = 1000
@@ -27,13 +50,15 @@ const STATUS_WORD: Partial<Record<PlayerSnapshot['status'], { text: string; colo
   error: { text: '出错', color: 'red' },
 }
 
-const TOOL_DESCRIPTION = `控制用户在 Claude Code 里的背景音乐播放器（cc-music）。用户想听歌、点歌、切歌、暂停、调音量，或问正在放什么时使用。
+const TOOL_DESCRIPTION = `控制用户在 Claude Code 里的背景音乐播放器（cc-music）。用户想听歌、点歌、切歌、暂停、调音量、看歌词，或问正在放什么时使用。
 - action=play：按 query 搜索并立即播放最匹配的一首；原有队列保留，新歌插在当前歌曲之后
 - action=queue：按 query 搜索，把最匹配的一首加到队列末尾。要排好几首歌就多次调用，每次 query 写一首具体的歌
 - action=search：只搜索，返回候选列表，不播放
 - action=pause / resume / next / prev / stop：播放控制
 - action=volume：把音量设为 volume（0–100）
 - action=status：当前在放什么、队列里有什么
+- action=lyrics：当前歌曲的歌词
+- action=favorite：收藏或取消收藏当前歌曲
 query 写成“歌名 歌手”最准。provider 可选 bilibili（默认，国内可直接播放）或 ytmusic。`
 
 /** session.start 时用 `$` 建好的宿主能力；模块重载会重新 session.start，重新建。 */
@@ -80,7 +105,9 @@ async function poll(host: Host): Promise<void> {
   try {
     const player = await daemon.peekState(host)
     if (!isSame(previous, player)) await host.setPlayer(player)
+    await host.setDaemonVersion(player ? ((await daemon.runningVersion(host)) ?? null) : null)
     announce(host, player)
+    await syncTrackExtras(host, player)
   } catch (error) {
     host.debug(`轮询失败：${errorText(error)}`)
   } finally {
@@ -88,15 +115,46 @@ async function poll(host: Host): Promise<void> {
   }
 }
 
-/** 迷你播放器上的按钮：发命令，失败时用 toast 告诉用户。 */
-async function press(cmd: PlayerCommand): Promise<void> {
+/** 按钮背后的动作：失败时用 toast 告诉用户。 */
+async function act(task: (host: Host) => Promise<unknown>): Promise<void> {
   const current = host
   if (!current) return
   try {
-    await send(current, cmd)
+    await task(current)
   } catch (error) {
     current.toast(`cc-music：${errorText(error)}`)
   }
+}
+
+const press = (cmd: PlayerCommand) => act(h => send(h, cmd))
+
+const paneActions: PaneActions = {
+  command: cmd => void press(cmd),
+  setTab: tab => void act(h => switchTab(h, tab)),
+  search: query =>
+    void act(async h => {
+      const trimmed = query.trim()
+      if (!trimmed) return
+      await h.setSearch({ query: trimmed, isSearching: true, error: null })
+      try {
+        await searchTracks(h, trimmed)
+        await h.setSearch({ query: trimmed, isSearching: false, error: null })
+      } catch (error) {
+        await h.setSearch({ query: trimmed, isSearching: false, error: errorText(error) })
+      }
+    }),
+  play: (track: Track) => void act(h => playNow(h, [track])),
+  enqueue: (track: Track) =>
+    void act(async h => {
+      const player = await enqueue(h, [track])
+      h.toast(`已加入队列（第 ${player.queue.length} 首）：${trackLabel(track)}`)
+    }),
+  toggleFavorite: (track: Track) => void act(async h => h.toast(await toggleFavorite(h, track))),
+}
+
+async function switchTab(host: Host, tab: PaneTab): Promise<void> {
+  await host.setPaneTab(tab)
+  if (tab === 'favorites' || tab === 'history') await refreshLibrary(host)
 }
 
 export const register: Register = on => {
@@ -121,19 +179,43 @@ export const register: Register = on => {
           script: (await $.env.get('CC_MUSIC_DAEMON')) ?? `${repo}/daemon/src/launch.ts`,
         }
       },
+      sleep: ms => $.clock.sleep(ms),
+      openPane: async () => {
+        const opened = await $.ui.open({ id: PANE, title: 'cc-music', rows: PANE_ROWS })
+        if (!opened.isPlaced) return false
+        await update($, paneOpenAtom, () => true)
+        if (host) {
+          void syncTrackExtras(host, await read($, playerAtom))
+          void refreshLibrary(host).catch(() => undefined)
+        }
+        return true
+      },
       getPlayer: () => read($, playerAtom),
       setPlayer: player => update($, playerAtom, () => player).then(() => undefined),
       getLastSearch: () => read($, lastSearchAtom),
       setLastSearch: search => update($, lastSearchAtom, () => search).then(() => undefined),
       setBandHidden: isHidden => update($, bandHiddenAtom, () => isHidden).then(() => undefined),
+      isPaneOpen: () => read($, paneOpenAtom),
+      setPaneOpen: isOpen => update($, paneOpenAtom, () => isOpen).then(() => undefined),
+      setPaneTab: tab => update($, paneTabAtom, () => tab).then(() => undefined),
+      setSearch: search => update($, searchAtom, () => search).then(() => undefined),
+      getLyrics: () => read($, lyricsAtom),
+      setLyrics: lyrics => update($, lyricsAtom, () => lyrics).then(() => undefined),
+      getCover: () => read($, coverAtom),
+      setCover: cover => update($, coverAtom, () => cover).then(() => undefined),
+      getLibrary: () => read($, libraryAtom),
+      setLibrary: library => update($, libraryAtom, () => library).then(() => undefined),
+      setDaemonVersion: async version => {
+        if ((await read($, daemonVersionAtom)) !== version) await update($, daemonVersionAtom, () => version)
+      },
       toast: (text, timeoutMs) => $.ui.toast(text, timeoutMs === undefined ? undefined : { timeoutMs }),
       debug: text => $.ui.log(`cc-music: ${text}`, { to: 'debug' }),
     }
 
     await $.command.register({
       name: COMMAND,
-      description: '听音乐：/music <歌名> 搜索播放，/music help 查看全部用法',
-      argumentHint: '[歌名 | 序号 | pause | next | vol 60 | queue | help]',
+      description: '听音乐：/music 打开面板，/music <歌名> 搜索播放，/music help 查看全部用法',
+      argumentHint: '[歌名 | 序号 | pause | next | vol 60 | lyrics | help]',
       immediate: true,
     })
     await $.tool.register({
@@ -144,7 +226,7 @@ export const register: Register = on => {
         properties: {
           action: {
             type: 'string',
-            enum: ['play', 'queue', 'search', 'pause', 'resume', 'next', 'prev', 'stop', 'volume', 'status'],
+            enum: ['play', 'queue', 'search', 'pause', 'resume', 'next', 'prev', 'stop', 'volume', 'status', 'lyrics', 'favorite'],
           },
           query: { type: 'string', description: '搜索词，最好是“歌名 歌手”' },
           provider: { type: 'string', enum: ['bilibili', 'ytmusic'] },
@@ -175,6 +257,37 @@ export const register: Register = on => {
     }
   })
 
+  on('ui.close', async ($, e, next) => {
+    if (e.id === PANE) await update($, paneOpenAtom, () => false)
+    return next(e)
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const kit = $.ui.resolve(e)
+    const daemonVersion = await read($, daemonVersionAtom)
+    return PaneView(
+      {
+        Box: kit.Box,
+        Text: kit.Text,
+        Button: kit.Button,
+        ...('Input' in kit ? { Input: kit.Input } : {}),
+        ...('Raster' in kit ? { Raster: kit.Raster } : {}),
+      },
+      {
+        columns: e.props.bodyColumns,
+        tab: await read($, paneTabAtom),
+        player: await read($, playerAtom),
+        lyrics: await read($, lyricsAtom),
+        cover: await read($, coverAtom),
+        library: await read($, libraryAtom),
+        lastSearch: await read($, lastSearchAtom),
+        search: await read($, searchAtom),
+        outdatedDaemon: daemonVersion && daemonVersion !== daemon.DAEMON_VERSION ? daemonVersion : undefined,
+      },
+      paneActions,
+    )
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
     const player = await read($, playerAtom)
@@ -185,8 +298,8 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const columns = e.props.bodyColumns
     const word = STATUS_WORD[player.status]
-    const hasSideButtons = columns >= 60
-    const barWidth = Math.min(30, columns - 80)
+    const hasSideButtons = columns >= 70
+    const barWidth = Math.min(30, columns - 90)
     const time =
       barWidth >= 8
         ? `${formatTime(player.position)} ${progressBar(player.position, player.duration, barWidth)} ${formatTime(player.duration)}`
@@ -210,6 +323,7 @@ export const register: Register = on => {
               onPress={() => void press({ type: 'toggle' })}
             />
             {hasSideButtons ? <Button key="next" label="下一首" hotkey="n" onPress={() => void press({ type: 'next' })} /> : null}
+            <Button key="panel" label="面板" hotkey="o" onPress={() => void act(h => h.openPane())} />
           </Box>
         </Box>
         {player.status === 'error' && player.error ? (

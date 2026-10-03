@@ -3,7 +3,8 @@
 在 Claude Code 里听音乐。一个 Claude Code mod 加一个后台播放进程：
 
 - `/music 晴天` 搜索并播放，`/music next`、`/music vol 40` 等控制
-- 输入框上方的迷你播放器：曲名、进度、上一首 / 暂停 / 下一首按钮
+- 输入框上方的迷你播放器：曲名、进度、上一首 / 暂停 / 下一首 / 面板按钮
+- `/music` 打开面板：封面字符画、滚动歌词、搜索、队列、收藏、播放历史
 - 直接对 Claude 说“放点周杰伦”，它会调用 `music` 工具帮你点歌
 - 音源可插拔：目前有哔哩哔哩（默认，国内直连）和 YouTube Music
 
@@ -55,6 +56,7 @@ claude --plugin-dir "D:/Project N2/cc-music/mod"
 
 | 命令 | 作用 |
 | --- | --- |
+| `/music` | 打开面板 |
 | `/music <歌名>` | 搜索并立即播放第一个结果（插在当前歌曲之后，原队列保留） |
 | `/music bili:<歌名>`、`/music yt:<歌名>` | 指定音源 |
 | `/music <序号>` | 播放上次搜索结果里的第几首 |
@@ -65,11 +67,17 @@ claude --plugin-dir "D:/Project N2/cc-music/mod"
 | `/music seek <1:30\|+10\|-10>` | 跳转 |
 | `/music repeat <off\|all\|one>` | 循环模式 |
 | `/music queue` / `jump <n>` / `remove <n>` / `clear` | 队列 |
+| `/music lyrics` | 当前歌曲的歌词 |
+| `/music fav` / `favs` / `history` | 收藏当前歌曲 / 查看收藏 / 播放历史 |
 | `/music show` / `hide` | 显示 / 隐藏迷你播放器 |
 | `/music providers` | 查看音源 |
+| `/music status` | 当前播放状态 |
+| `/music restart` | 重启后台播放器，保留队列和进度（升级 cc-music 后用） |
 | `/music quit` | 关闭后台播放器 |
 
-迷你播放器获得焦点（ctrl+x tab）后，`b` / `p` / `n` 分别是上一首 / 暂停 / 下一首。
+迷你播放器获得焦点（ctrl+x tab）后，`b` / `p` / `n` / `o` 分别是上一首 / 暂停 / 下一首 / 打开面板。
+
+面板获得焦点后：`1`–`5` 切换标签页（正在播放、搜索、队列、收藏、历史），`p` / `n` / `b` 播放控制，`f` 收藏当前歌曲，Tab 和方向键在按钮间移动。封面只在终端里显示。
 
 ## 配置
 
@@ -79,13 +87,13 @@ claude --plugin-dir "D:/Project N2/cc-music/mod"
 | --- | --- | --- |
 | `defaultProvider` | `bilibili` | 不带前缀搜索时用的音源 |
 | `volume` | `60` | 启动音量 |
-| `mpvPath` / `ytdlpPath` | 自动 | 找不到时手动指定 |
+| `mpvPath` / `ytdlpPath` / `ffmpegPath` | 自动 | 找不到时手动指定（ffmpeg 用来画封面，没有就不显示封面） |
 | `jsRuntime` | `node` | 交给 yt-dlp `--js-runtimes`，解析 YouTube 需要 |
 | `cookiesFromBrowser` | 空 | 交给 yt-dlp `--cookies-from-browser`，如 `firefox` |
 | `cookiesFile` | 空 | 交给 yt-dlp `--cookies` 的 cookies.txt |
 | `idleExitMinutes` | `30` | 空闲多久自动退出，0 表示不退出 |
 
-改完配置后 `/music quit` 再重新播放即可生效。日志在 `~/.cc-music/daemon.log`。
+改完配置后 `/music restart` 生效。日志在 `~/.cc-music/daemon.log`，收藏和播放历史在 `~/.cc-music/library.json`。
 
 ### YouTube Music 播放被拦截
 
@@ -95,6 +103,11 @@ YouTube 会对部分网络出口（尤其是代理）要求“确认你不是机
 - 用浏览器扩展（如 Get cookies.txt LOCALLY）导出 `cookies.txt`，在配置里设置 `cookiesFile`
 - 或者设置 `cookiesFromBrowser`（Windows 上 Chrome / Edge 的 cookies 加密后 yt-dlp 常常读不出，Firefox 更可靠）
 - 或者换一个代理节点
+
+## 歌词
+
+歌词来自 [LRCLIB](https://lrclib.net)（免费、带时间轴）。B 站视频标题会先去掉【标签】、提取《书名号》里的歌名再搜，并按时长挑最接近的版本。
+新增歌词来源：在 `daemon/src/lyrics/` 下实现 `LyricsProvider`，在 `lyrics/index.ts` 里登记。
 
 ## 新增音源
 
@@ -111,4 +124,5 @@ npm run daemon     # 前台运行 daemon（调试用）
 
 - `mod/tsconfig.json` 继承 Claude Code 生成的 `mod/.claude-plugin/types/tsconfig.json`；刚检出时先运行一次 `npm test` 或 `claude --plugin-dir mod` 生成它
 - mod 的约束：`$` 只能在 hook 里直接调用，不能传给其他函数，所以 `register.tsx` 在 `session.start` 里把能力包成 `Host`（见 `hooks/host.ts`）；`$.state` 的 atom 必须声明在使用它的文件里
+- 面板的画法在 `hooks/view.tsx`（纯函数，不碰 `$`），状态和动作在 `register.tsx`
 - 在 Git Bash 里运行 `claude -p "/music ..."` 时先 `export MSYS_NO_PATHCONV=1`，否则 `/music` 会被改写成 Windows 路径

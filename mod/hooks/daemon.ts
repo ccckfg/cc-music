@@ -1,5 +1,15 @@
 // 与 cc-music daemon 通信：找到它（~/.cc-music/daemon.json）、必要时拉起它、发 HTTP 请求。
-import type { DaemonInfo, PlayerCommand, PlayerSnapshot, ProviderInfo, SearchResponse } from '../types'
+import type {
+  CoverResponse,
+  DaemonInfo,
+  LibraryResponse,
+  LyricsResponse,
+  PlayerCommand,
+  PlayerSnapshot,
+  ProviderInfo,
+  SearchResponse,
+  Track,
+} from '../types'
 import { errorText, type Host } from './host.ts'
 
 const LAUNCH_TIMEOUT_MS = 20_000
@@ -49,7 +59,7 @@ async function send<T>(host: Host, info: DaemonInfo, method: 'GET' | 'POST', pat
 }
 
 /** 找到正在运行的 daemon；`launch` 为真时找不到就拉起一个。 */
-async function connect(host: Host, options: { launch: boolean }): Promise<DaemonInfo | undefined> {
+export async function connect(host: Host, options: { launch: boolean }): Promise<DaemonInfo | undefined> {
   if (cached) return cached
   const found = await readDaemonInfo(host)
   if (found) {
@@ -137,4 +147,28 @@ export async function shutdown(host: Host): Promise<boolean> {
     providers = undefined
   }
   return true
+}
+
+/** mod 需要的 daemon 版本；更旧的 daemon 没有歌词、封面、收藏接口，`/music restart` 换新。 */
+export const DAEMON_VERSION = '0.2.0'
+
+/** 正在运行的 daemon 的版本；没在运行时 undefined。 */
+export async function runningVersion(host: Host): Promise<string | undefined> {
+  return (await connect(host, { launch: false }))?.version
+}
+
+export function lyrics(host: Host, track: Track): Promise<LyricsResponse> {
+  return call(host, 'POST', '/lyrics', { track })
+}
+
+export function cover(host: Host, track: Track, columns: number, rows: number): Promise<CoverResponse> {
+  return call(host, 'POST', '/cover', { track, columns, rows })
+}
+
+export function library(host: Host): Promise<LibraryResponse> {
+  return call(host, 'GET', '/library')
+}
+
+export function setFavorite(host: Host, track: Track, favorite: boolean): Promise<LibraryResponse> {
+  return call(host, 'POST', '/library/favorite', { track, favorite })
 }

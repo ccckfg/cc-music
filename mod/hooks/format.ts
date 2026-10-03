@@ -1,5 +1,5 @@
 // 把播放器状态、曲目、搜索结果排成给人看（也给模型看）的文字。
-import type { PlayerSnapshot, ProviderInfo, Track } from '../types'
+import type { LyricLine, LyricsState, PlayerSnapshot, ProviderInfo, Track } from '../types'
 
 const STATUS_TEXT: Record<PlayerSnapshot['status'], string> = {
   idle: '已停止',
@@ -83,6 +83,7 @@ export function describeProviders(providers: ProviderInfo[]): string {
 }
 
 export const HELP = `用法：
+/music                 打开 cc-music 面板（正在播放、歌词、搜索、队列、收藏、历史）
 /music <歌名>          搜索并立即播放第一个结果（插在当前歌曲之后）
 /music bili:<歌名>     指定音源搜索（bili: 哔哩哔哩，yt: YouTube Music）
 /music <序号>          播放上次搜索结果里的第几首
@@ -95,6 +96,65 @@ export const HELP = `用法：
 /music queue           查看队列
 /music jump <序号>     跳到队列里的第几首
 /music clear           清空队列
+/music lyrics          显示当前歌曲的歌词
+/music fav             收藏/取消收藏当前歌曲
+/music favs | history  查看收藏 / 播放历史
 /music show | hide     显示/隐藏输入框上方的迷你播放器
 /music providers       查看音源
+/music status          当前播放状态
+/music restart         重启后台播放器（保留队列和进度）
 /music quit            关闭后台播放器`
+
+export function trackKey(track: Track): string {
+  return `${track.provider}:${track.id}`
+}
+
+/** 当前该唱到哪一行：最后一行开始时间不晚于 position 的；还没开始唱时为 -1。 */
+export function currentLyricIndex(lines: LyricLine[], position: number): number {
+  let low = 0
+  let high = lines.length - 1
+  let found = -1
+  while (low <= high) {
+    const mid = (low + high) >> 1
+    if ((lines[mid]?.time ?? Infinity) <= position + 0.2) {
+      found = mid
+      low = mid + 1
+    } else {
+      high = mid - 1
+    }
+  }
+  return found
+}
+
+export function describeLyrics(lyrics: LyricsState | null, track: Track | null): string {
+  if (!track) return '现在没有在播放。'
+  if (!lyrics || lyrics.key !== trackKey(track)) return `正在查找${quoteTitle(track.title)}的歌词…`
+  if (lyrics.error) return `查找歌词失败：${lyrics.error}`
+  const text = lyrics.synced ? lyrics.synced.map(line => line.text).join('\n') : lyrics.plain
+  if (!text) return `没有找到${quoteTitle(track.title)}的歌词。`
+  return `${quoteTitle(track.title)}的歌词（来源 ${lyrics.source}）：\n\n${text}`
+}
+
+export function describeTrackList(title: string, tracks: Track[], empty: string): string {
+  if (tracks.length === 0) return empty
+  const lines = tracks.map((track, i) => `${String(i + 1).padStart(2)}. ${trackLabel(track)}  ${formatTime(track.durationSec)}`)
+  return [title, ...lines].join('\n')
+}
+
+/** ISO 时间 → “3 分钟前”“昨天 21:05”这类相对说法 */
+export function timeAgo(iso: string, now = Date.now()): string {
+  const then = Date.parse(iso)
+  if (!Number.isFinite(then)) return ''
+  const minutes = Math.floor((now - then) / 60_000)
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes} 分钟前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} 小时前`
+  const days = Math.floor(hours / 24)
+  return days === 1 ? '昨天' : `${days} 天前`
+}
+
+/** 给歌名加书名号；标题里已经有《》（B 站常见）时不再加。 */
+export function quoteTitle(title: string): string {
+  return title.includes('《') ? title : `《${title}》`
+}

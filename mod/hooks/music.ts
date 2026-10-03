@@ -1,10 +1,27 @@
 // 播放器的各个动作：/music 命令和给模型的 music 工具都调用这里。
-import type { PlayerCommand, PlayerSnapshot, RepeatMode, Track } from '../types'
+import type { LibraryResponse, LyricsState, PlayerCommand, PlayerSnapshot, RepeatMode, Track } from '../types'
 import * as daemon from './daemon.ts'
-import { describeProviders, describeQueue, describeResults, describeStatus, HELP, parseTime, trackLabel } from './format.ts'
-import type { Host } from './host.ts'
+import {
+  describeLyrics,
+  describeProviders,
+  describeQueue,
+  describeResults,
+  describeStatus,
+  describeTrackList,
+  HELP,
+  parseTime,
+  quoteTitle,
+  timeAgo,
+  trackKey,
+  trackLabel,
+} from './format.ts'
+import { errorText, type Host } from './host.ts'
 
 const SEARCH_LIMIT = 10
+
+/** 面板里封面字符画的大小：16 列 × 8 行 = 16×16 像素 */
+export const COVER_COLUMNS = 16
+export const COVER_ROWS = 8
 
 /** 发命令给 daemon，并立刻把返回的状态写进 $.state，迷你播放器不用等下一次轮询。 */
 export async function send(host: Host, cmd: PlayerCommand): Promise<PlayerSnapshot> {
@@ -49,6 +66,107 @@ async function resultAt(host: Host, position: number): Promise<Track> {
   return track
 }
 
+export async function refreshLibrary(host: Host): Promise<LibraryResponse> {
+  const library = await daemon.library(host)
+  await host.setLibrary(library)
+  return library
+}
+
+/** 收藏或取消收藏（缺省是当前曲目），返回给人看的结果。 */
+export async function toggleFavorite(host: Host, track?: Track): Promise<string> {
+  const target = track ?? (await daemon.peekState(host))?.current
+  if (!target) throw new Error('现在没有在播放，不知道收藏哪首。')
+  const known = (await host.getLibrary()) ?? (await refreshLibrary(host))
+  const isFavorite = known.favorites.some(t => trackKey(t) === trackKey(target))
+  await host.setLibrary(await daemon.setFavorite(host, target, !isFavorite))
+  return `${isFavorite ? '已取消收藏' : '♥ 已收藏'}：${trackLabel(target)}`
+}
+
+/** 正在取的歌词，按曲目合并重复请求 */
+let lyricsLoading: { key: string; promise: Promise<LyricsState> } | undefined
+let coverKey: string | undefined
+
+/** 取曲目的歌词并写进 $.state；已经有了直接返回，正在取就等同一个请求。 */
+export async function loadLyrics(host: Host, track: Track): Promise<LyricsState> {
+  const key = trackKey(track)
+  const known = await host.getLyrics()
+  if (known?.key === key) return known
+  if (lyricsLoading?.key === key) return lyricsLoading.promise
+
+  const promise = daemon
+    .lyrics(host, track)
+    .catch((error): LyricsState => ({ key, synced: null, plain: null, source: null, error: errorText(error) }))
+    .then(async lyrics => {
+      await host.setLyrics(lyrics)
+      return lyrics
+    })
+    .finally(() => {
+      if (lyricsLoading?.key === key) lyricsLoading = undefined
+    })
+  lyricsLoading = { key, promise }
+  return promise
+}
+
+/**
+ * 当前曲目变了时取歌词、刷新播放历史；面板开着时再取封面。轮询每秒调用。
+ * 旧版 daemon 没有这些接口，跳过。
+ */
+export async function syncTrackExtras(host: Host, player: PlayerSnapshot | null): Promise<void> {
+  const track = player?.current
+  if (!track) return
+  const key = trackKey(track)
+  if ((await daemon.runningVersion(host)) !== daemon.DAEMON_VERSION) return
+
+  if (lyricsLoading?.key !== key && (await host.getLyrics())?.key !== key) {
+    // 换歌了：播放历史也变了
+    refreshLibrary(host).catch(() => undefined)
+    void loadLyrics(host, track)
+  }
+
+  if (coverKey !== key && (await host.isPaneOpen()) && (await host.getCover())?.key !== key) {
+    coverKey = key
+    daemon
+      .cover(host, track, COVER_COLUMNS, COVER_ROWS)
+      .then(cover => host.setCover(cover))
+      .catch(error => host.debug(`封面失败：${errorText(error)}`))
+      .finally(() => {
+        if (coverKey === key) coverKey = undefined
+      })
+  }
+}
+
+/** 换新版 daemon：记下队列和进度，关掉旧的，拉起新的，再接着放。 */
+async function restart(host: Host): Promise<string> {
+  const before = await daemon.peekState(host)
+  await daemon.shutdown(host)
+  await host.setPlayer(null)
+  if (!before || before.queue.length === 0) {
+    await daemon.connect(host, { launch: true })
+    return '后台播放器已重启。'
+  }
+  await send(host, { type: 'volume', value: before.volume })
+  await send(host, { type: 'repeat', mode: before.repeat })
+  const wasPlaying = before.status === 'playing' || before.status === 'loading' || before.status === 'paused'
+  if (!wasPlaying) {
+    await send(host, { type: 'enqueue', tracks: before.queue })
+    await send(host, { type: 'stop' })
+    return '后台播放器已重启，队列已恢复。'
+  }
+  await send(host, { type: 'play', tracks: before.queue, start: Math.max(0, before.index) })
+  // 等新曲目加载出来再跳回原来的位置
+  for (let i = 0; i < 40 && before.position > 3; i += 1) {
+    const now = await daemon.peekState(host)
+    if (now?.status === 'playing') {
+      await send(host, { type: 'seek', seconds: before.position })
+      break
+    }
+    if (now?.status === 'error') break
+    await host.sleep(250)
+  }
+  if (before.status === 'paused') await send(host, { type: 'pause' })
+  return before.current ? `后台播放器已重启，接着放${quoteTitle(before.current.title)}。` : '后台播放器已重启。'
+}
+
 function parseIndex(text: string | undefined, what: string): number {
   const n = Number(text)
   if (!text || !Number.isInteger(n) || n < 1) throw new Error(`${what}需要一个从 1 开始的序号。`)
@@ -86,9 +204,11 @@ export async function runMusic(host: Host, args: string): Promise<string> {
   const verb = head.toLowerCase()
   const rest = restParts.join(' ')
 
-  if (text === '' || verb === 'status' || verb === '状态') {
-    return describeStatus(await daemon.peekState(host))
+  if (text === '' || verb === 'panel' || verb === 'ui' || verb === '面板') {
+    const status = describeStatus(await daemon.peekState(host))
+    return (await host.openPane()) ? `已打开 cc-music 面板。\n${status}` : status
   }
+  if (verb === 'status' || verb === '状态') return describeStatus(await daemon.peekState(host))
   if (verb === 'help' || verb === '帮助' || verb === '?') return HELP
 
   const simple = SIMPLE[verb]
@@ -132,6 +252,35 @@ export async function runMusic(host: Host, args: string): Promise<string> {
     case 'hide':
       await host.setBandHidden(true)
       return '迷你播放器已隐藏，用 `/music show` 恢复。'
+    case 'lyrics':
+    case 'lrc':
+    case '歌词': {
+      const track = (await daemon.peekState(host))?.current ?? null
+      if (track && (await daemon.runningVersion(host)) !== daemon.DAEMON_VERSION) {
+        throw new Error('后台播放器是旧版本，不支持歌词。先运行 /music restart。')
+      }
+      return describeLyrics(track ? await loadLyrics(host, track) : null, track)
+    }
+    case 'fav':
+    case 'like':
+    case '收藏':
+      return toggleFavorite(host)
+    case 'favs':
+    case 'favorites':
+    case '收藏夹': {
+      const { favorites } = await refreshLibrary(host)
+      return describeTrackList(`收藏（${favorites.length} 首）：`, favorites, '还没有收藏。播放时用 `/music fav` 收藏当前歌曲。')
+    }
+    case 'history':
+    case '历史': {
+      const { history } = await refreshLibrary(host)
+      if (history.length === 0) return '还没有播放历史。'
+      const lines = history.slice(0, 30).map((entry, i) => `${String(i + 1).padStart(2)}. ${trackLabel(entry.track)}  ${timeAgo(entry.playedAt)}`)
+      return ['最近播放：', ...lines].join('\n')
+    }
+    case 'restart':
+    case '重启':
+      return restart(host)
     case 'providers':
     case '音源':
       return describeProviders(await daemon.listProviders(host))
@@ -216,6 +365,10 @@ export async function runTool(host: Host, input: ToolInput): Promise<string> {
       const player = await daemon.peekState(host)
       return player && player.queue.length > 1 ? `${describeStatus(player)}\n\n${describeQueue(player)}` : describeStatus(player)
     }
+    case 'lyrics':
+      return runMusic(host, 'lyrics')
+    case 'favorite':
+      return toggleFavorite(host)
     case 'volume': {
       if (typeof input.volume !== 'number') throw new Error('action=volume 需要 volume（0–100）')
       return runMusic(host, `vol ${Math.round(input.volume)}`)
