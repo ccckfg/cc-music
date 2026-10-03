@@ -96,7 +96,7 @@ export class Player {
         const at = command.next && this.index >= 0 ? this.index + 1 : this.queue.length
         this.queue = [...this.queue.slice(0, at), ...command.tracks, ...this.queue.slice(at)].slice(0, MAX_QUEUE)
         this.bump()
-        if (wasIdle) {
+        if (wasIdle || command.play) {
           this.index = at
           return this.load()
         }

@@ -1,0 +1,9 @@
+{
+  // .claude-plugin/types/ 由 Claude Code 每次加载 mod 时生成（已 gitignore），
+  // 首次检出后先用 `claude --plugin-dir mod` 或 `claude plugin test mod` 加载一次
+  "extends": "./.claude-plugin/types/tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true
+  },
+  "include": ["hooks", "types", "tests"]
+}

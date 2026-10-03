@@ -1,0 +1,7 @@
+{
+  "name": "cc-music",
+  "version": "0.1.0",
+  "description": "在 Claude Code 里听音乐：/music 搜索播放，输入框上方的迷你播放器，Claude 也能帮你点歌",
+  "author": { "name": "ccckfg" },
+  "types": "./types/index.d.ts"
+}

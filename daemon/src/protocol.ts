@@ -46,6 +46,8 @@ export type PlayerSnapshot = {
 export type ProviderInfo = {
   id: string;
   name: string;
+  /** 搜索前缀可用的别名，如 `bili`、`yt` */
+  aliases: string[];
   /** 是否是默认音源 */
   isDefault: boolean;
   /** 给人看的提示，如“播放需要 cookies” */
@@ -67,7 +69,8 @@ export type SearchResponse = {
 
 export type PlayerCommand =
   | { type: 'play'; tracks: Track[]; start?: number }
-  | { type: 'enqueue'; tracks: Track[]; next?: boolean }
+  // next：插到当前曲目之后；play：插入后立即播放
+  | { type: 'enqueue'; tracks: Track[]; next?: boolean; play?: boolean }
   | { type: 'jump'; index: number }
   | { type: 'remove'; index: number }
   | { type: 'clear' }

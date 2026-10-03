@@ -30,7 +30,12 @@ export class ProviderRegistry {
 
   list(): ProviderInfo[] {
     return this.providers.map(provider => {
-      const info: ProviderInfo = { id: provider.id, name: provider.name, isDefault: provider.id === this.defaultId }
+      const info: ProviderInfo = {
+        id: provider.id,
+        name: provider.name,
+        aliases: [...provider.aliases],
+        isDefault: provider.id === this.defaultId,
+      }
       const note = provider.note()
       if (note) info.note = note
       return info
