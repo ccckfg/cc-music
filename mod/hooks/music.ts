@@ -19,9 +19,9 @@ import { errorText, type Host } from './host.ts'
 
 const SEARCH_LIMIT = 10
 
-/** 面板里封面字符画的大小：16 列 × 8 行 = 16×16 像素 */
-export const COVER_COLUMNS = 16
-export const COVER_ROWS = 8
+/** 向 daemon 要的封面源图：64 列 × 32 行半格 = 64×64 像素，面板再按宽度缩放成象限字符画 */
+export const COVER_COLUMNS = 64
+export const COVER_ROWS = 32
 
 /** 发命令给 daemon，并立刻把返回的状态写进 $.state，迷你播放器不用等下一次轮询。 */
 export async function send(host: Host, cmd: PlayerCommand): Promise<PlayerSnapshot> {

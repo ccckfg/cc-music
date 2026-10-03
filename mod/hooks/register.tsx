@@ -5,7 +5,7 @@ import type { Register } from 'claude-code'
 
 import type { PaneTab, PlayerCommand, PlayerSnapshot, Track } from '../types'
 import * as daemon from './daemon.ts'
-import { formatTime, progressBar, trackLabel } from './format.ts'
+import { trackLabel } from './format.ts'
 import { errorText, type Host } from './host.ts'
 import {
   afterPaneOpened,
@@ -20,7 +20,7 @@ import {
   toggleFavorite,
   type ToolInput,
 } from './music.ts'
-import { PaneView, type PaneActions } from './view.tsx'
+import { MiniPlayer, PaneView, type PaneActions } from './view.tsx'
 
 // $.state 里的值：热重载后仍在，画面从这里读。引擎要求它们在使用它们的文件里声明
 const playerAtom = atom({ plugin: 'cc-music', key: 'player' } as const, null)
@@ -48,12 +48,6 @@ const SIDEBAR_MIN_COLUMNS = 110
 /** 播放中每秒取一次状态；空闲时每 IDLE_EVERY 秒一次 */
 const POLL_MS = 1000
 const IDLE_EVERY = 5
-
-const STATUS_WORD: Partial<Record<PlayerSnapshot['status'], { text: string; color: string }>> = {
-  loading: { text: '加载中', color: 'cyan' },
-  paused: { text: '已暂停', color: 'yellow' },
-  error: { text: '出错', color: 'red' },
-}
 
 const TOOL_DESCRIPTION = `控制用户在 Claude Code 里的背景音乐播放器（cc-music）。用户想听歌、点歌、切歌、暂停、调音量、看歌词，或问正在放什么时使用。
 - action=play：按 query 搜索并立即播放最匹配的一首；原有队列保留，新歌插在当前歌曲之后
@@ -332,51 +326,17 @@ export const register: Register = on => {
 
     const below = await next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const columns = e.props.bodyColumns
-    const word = STATUS_WORD[player.status]
-    const hasSideButtons = columns >= 70
-    const barWidth = Math.min(30, columns - 90)
-    const time =
-      barWidth >= 8
-        ? `${formatTime(player.position)} ${progressBar(player.position, player.duration, barWidth)} ${formatTime(player.duration)}`
-        : `${formatTime(player.position)}/${formatTime(player.duration)}`
-
     return (
       <Box flexDirection="column">
-        <Box flexDirection="row">
-          <Box flexGrow={1} flexShrink={1} minWidth={8}>
-            <Text color="magenta">♪ </Text>
-            <Text wrap="truncate-end">{trackLabel(track)}</Text>
-          </Box>
-          <Box flexShrink={0} marginLeft={1} gap={1}>
-            {word ? <Text color={word.color}>{word.text}</Text> : null}
-            <Text dimColor>{time}</Text>
-            {hasSideButtons ? <Button key="prev" label="上一首" hotkey="b" onPress={() => void press({ type: 'prev' })} /> : null}
-            <Button
-              key="toggle"
-              label={player.status === 'paused' ? '播放' : '暂停'}
-              hotkey="p"
-              onPress={() => void press({ type: 'toggle' })}
-            />
-            {hasSideButtons ? <Button key="next" label="下一首" hotkey="n" onPress={() => void press({ type: 'next' })} /> : null}
-            <Button
-              key="panel"
-              label="面板"
-              hotkey="o"
-              onPress={() =>
-                void $.ui
-                  .open({ id: PANE, title: 'cc-music', rows: PANE_ROWS, columns: PANE_COLUMNS, focus: true })
-                  .then(opened => (opened.isPlaced ? act(afterPaneOpened) : undefined))
-              }
-            />
-          </Box>
-        </Box>
-        {player.status === 'error' && player.error ? (
-          <Text color="red" wrap="truncate-end">
-            {player.error}
-          </Text>
-        ) : null}
-        {/* 下面的插件（如 crush-style 的状态条）画的东西照样画在迷你播放器下面 */}
+        {MiniPlayer({ Box, Text, Button }, player, track, e.props.bodyColumns, {
+          command: cmd => void press(cmd),
+          // 按钮背后是用户的点击：用这个 hook 的 `$` 打开，引擎认作用户要求的
+          openPane: () =>
+            void $.ui
+              .open({ id: PANE, title: 'cc-music', rows: PANE_ROWS, columns: PANE_COLUMNS, focus: true })
+              .then(opened => (opened.isPlaced ? act(afterPaneOpened) : undefined)),
+        })}
+        {/* 下面的插件画的东西照样画在迷你播放器下面 */}
         {below}
       </Box>
     )

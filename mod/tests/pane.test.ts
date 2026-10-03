@@ -33,7 +33,8 @@ describe('侧边栏', () => {
       viewport: { columns: 160, rows: 40, isFullscreen: true },
     })
     expect(await pane.find({ type: 'Raster' })).toBeDefined()
-    expect(await pane.find({ type: 'Text', text: '0:12 / 4:30' })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: '0:12' })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: '4:30' })).toBeDefined()
     expect(await pane.find({ type: 'Text', text: '从出生那年就飘着' })).toBeDefined()
     await pane.unmount()
   })
@@ -57,7 +58,7 @@ describe('cc-music 面板', () => {
       expect((await pane.find({ type: 'Text', text: '故事的小黄花' }))?.props['bold']).toBe(true)
       expect((await pane.find({ type: 'Text', text: '从出生那年就飘着' }))?.props['bold']).toBeUndefined()
       const raster = await pane.find({ type: 'Raster' })
-      if (surface === 'terminal') expect(raster?.props['columns']).toBe(2)
+      if (surface === 'terminal') expect(Number(raster?.props['columns'])).toBeGreaterThanOrEqual(12)
       else expect(raster).toBeUndefined()
 
       await pane.press({ key: 'toggle' })
@@ -76,7 +77,7 @@ describe('cc-music 面板', () => {
     await pane.press({ key: 'tab-search' })
     await pane.input({ key: 'query', text: 'bili:稻香' })
     expect(fake.searches).toEqual(['bilibili|稻香'])
-    expect(await pane.find({ type: 'Text', text: /2\. 稻香 — 周杰伦/ })).toBeDefined()
+    expect(await pane.find({ key: 'result-1-play', text: '稻香' })).toBeDefined()
 
     await pane.press({ key: 'result-1-play' })
     expect(fake.commands.at(-1)).toEqual({ type: 'enqueue', tracks: [RICE], next: true, play: true })
@@ -95,10 +96,10 @@ describe('cc-music 面板', () => {
     const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
     await pane.press({ key: 'favorite' })
     expect(fake.library.favorites).toEqual([SUNNY])
-    expect(await pane.find({ key: 'favorite', text: '已收藏' })).toBeDefined()
+    expect(await pane.find({ key: 'favorite', text: '♥' })).toBeDefined()
 
     await pane.press({ key: 'tab-favorites' })
-    expect(await pane.find({ type: 'Text', text: /1\. 晴天 — 周杰伦/ })).toBeDefined()
+    expect(await pane.find({ key: 'fav-0-play', text: '晴天' })).toBeDefined()
     await pane.press({ key: 'fav-0-unfav' })
     expect(fake.library.favorites).toEqual([])
     expect(await pane.find({ type: 'Text', text: /还没有收藏/ })).toBeDefined()
@@ -114,7 +115,7 @@ describe('cc-music 面板', () => {
 
     const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
     await pane.press({ key: 'tab-queue' })
-    expect(await pane.find({ type: 'Text', text: /共 2 首/ })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: /2 首/ })).toBeDefined()
     await pane.press({ key: 'queue-1-jump' })
     expect(fake.commands.at(-1)).toEqual({ type: 'jump', index: 1 })
     await pane.press({ key: 'queue-0-remove' })

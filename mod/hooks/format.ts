@@ -38,14 +38,6 @@ export function trackLabel(track: Track): string {
   return track.artists.length > 0 ? `${track.title} — ${track.artists.join(' / ')}` : track.title
 }
 
-/** 一行文字的进度条，如 `━━━━━━●─────────` */
-export function progressBar(position: number, duration: number | null, width: number): string {
-  if (width <= 0) return ''
-  if (!duration || duration <= 0) return '─'.repeat(width)
-  const filled = Math.min(width - 1, Math.max(0, Math.round((position / duration) * (width - 1))))
-  return `${'━'.repeat(filled)}●${'─'.repeat(width - 1 - filled)}`
-}
-
 export function describeStatus(player: PlayerSnapshot | null): string {
   if (!player) return '播放器没有在运行。用 `/music <歌名>` 开始听歌。'
   const lines: string[] = []
