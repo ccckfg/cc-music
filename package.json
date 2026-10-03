@@ -1,0 +1,15 @@
+{
+  "name": "cc-music",
+  "private": true,
+  "description": "Claude Code 里的音乐播放器：mod（界面与联动）+ daemon（播放与音源）",
+  "workspaces": ["daemon"],
+  "scripts": {
+    "daemon": "node daemon/src/main.ts",
+    "typecheck": "tsc -p daemon",
+    "validate": "claude plugin validate mod"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
+  }
+}

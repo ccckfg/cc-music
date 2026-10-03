@@ -1,0 +1,7 @@
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+
+# Claude Code 每次加载 mod 时生成的类型声明
+mod/.claude-plugin/types/
