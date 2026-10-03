@@ -62,19 +62,27 @@ export type FakeDaemon = {
   commands: PlayerCommand[];
   searches: string[];
   toasts: string[];
-  /** 打开过的面板：id 和想要的列数 */
-  opened: { id: string; columns: number | undefined }[];
+  /** 打开过的面板：id、想要的列数、是否要焦点 */
+  opened: { id: string; columns: number | undefined; focus: boolean }[];
   library: LibraryResponse;
   clock: ReturnType<typeof mock.clock>;
 }
 
 /** 一个假的 daemon：桩住会话、env、fs、http，记下 mod 发来的命令，按命令更新状态。 */
-export function fakeDaemon(on: On, version = '0.2.0'): FakeDaemon {
+export type FakeOptions = {
+  /** 假 daemon 报告的版本 */
+  version?: string;
+  /** 模拟 cc-music 下面的插件（如 crush-style）在输入框上方画的一行 */
+  bandBelow?: string;
+}
+
+export function fakeDaemon(on: On, options: FakeOptions = {}): FakeDaemon {
+  const version = options.version ?? '0.2.0'
   const toasts: string[] = []
   const opened: FakeDaemon['opened'] = []
   const library: LibraryResponse = { favorites: [], history: [] }
   on('ui.open', (_$, e) => {
-    opened.push({ id: e.id, columns: e.columns })
+    opened.push({ id: e.id, columns: e.columns, focus: e.focus === true })
     return { value: { isPlaced: true } }
   })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
@@ -89,7 +97,8 @@ export function fakeDaemon(on: On, version = '0.2.0'): FakeDaemon {
   const clock = mock.clock(on)
   // 引擎自己画的输入框上方区域：空的
   on('ui.render', ($, e) => {
-    const { Box } = $.ui.resolve(e)
+    const { Box, Text } = $.ui.resolve(e)
+    if (e.component === 'AbovePrompt' && options.bandBelow) return h(Text, {}, options.bandBelow) as RenderElement
     return h(Box, {}) as RenderElement
   })
 

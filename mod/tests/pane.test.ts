@@ -11,7 +11,8 @@ describe('侧边栏', () => {
     expect(fake.opened).toEqual([])
 
     await $.command.run(music('晴天', FULLSCREEN))
-    expect(fake.opened.map(o => o.id)).toEqual(['cc-music'])
+    // 开始放歌时顺手打开的侧边栏不抢焦点
+    expect(fake.opened).toEqual([{ id: 'cc-music', columns: 48, focus: false }])
     await $.command.run(music('next', FULLSCREEN))
     expect(fake.opened).toHaveLength(1)
 
@@ -44,7 +45,7 @@ describe('cc-music 面板', () => {
     await $.session.start(SESSION)
 
     expect((await $.command.run(music(''))).text).toContain('已在输入框上方打开面板')
-    expect(fake.opened).toEqual([{ id: 'cc-music', columns: 48 }])
+    expect(fake.opened).toEqual([{ id: 'cc-music', columns: 48, focus: true }])
 
     // 假 daemon 播到第 12 秒；轮询一次去取歌词和封面
     await $.command.run(music('晴天'))
@@ -122,7 +123,7 @@ describe('cc-music 面板', () => {
   })
 
   test('旧版 daemon：面板提示 /music restart，/music lyrics 说明原因', async ($, on) => {
-    const fake = fakeDaemon(on, '0.1.0')
+    const fake = fakeDaemon(on, { version: '0.1.0' })
     await $.session.start(SESSION)
     await $.command.run(music('晴天'))
     await $.command.run(music(''))

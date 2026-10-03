@@ -260,8 +260,15 @@ export const register: Register = on => {
       const { isFullscreen, columns } = e.presentation
       const canDock = isFullscreen && columns >= SIDEBAR_MIN_COLUMNS
       if (reply.pane === 'open' || (reply.pane === 'sidebar' && canDock)) {
-        // 必须用这个命令 hook 自己的 `$` 打开：引擎据此认作用户要求的，任何宽度都会摆出来
-        const opened = await $.ui.open({ id: PANE, title: 'cc-music', rows: PANE_ROWS, columns: PANE_COLUMNS })
+        // 必须用这个命令 hook 自己的 `$` 打开：引擎据此认作用户要求的，任何宽度都会摆出来。
+        // 明确要面板（/music）时要焦点：别的插件也有侧边栏时（如 crush-style），这样才会切到 cc-music 这一页
+        const opened = await $.ui.open({
+          id: PANE,
+          title: 'cc-music',
+          rows: PANE_ROWS,
+          columns: PANE_COLUMNS,
+          ...(reply.pane === 'open' ? { focus: true as const } : {}),
+        })
         if (opened.isPlaced) {
           await afterPaneOpened(h)
           if (reply.pane === 'open') return { text: `${placementNote(isFullscreen, columns)}\n${reply.text}` }
@@ -323,6 +330,7 @@ export const register: Register = on => {
     const track = player?.current
     if (isHidden || !player || !track || player.status === 'idle') return next(e)
 
+    const below = await next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const columns = e.props.bodyColumns
     const word = STATUS_WORD[player.status]
@@ -356,9 +364,9 @@ export const register: Register = on => {
               label="面板"
               hotkey="o"
               onPress={() =>
-                void $.ui.open({ id: PANE, title: 'cc-music', rows: PANE_ROWS, columns: PANE_COLUMNS }).then(opened =>
-                  opened.isPlaced ? act(afterPaneOpened) : undefined,
-                )
+                void $.ui
+                  .open({ id: PANE, title: 'cc-music', rows: PANE_ROWS, columns: PANE_COLUMNS, focus: true })
+                  .then(opened => (opened.isPlaced ? act(afterPaneOpened) : undefined))
               }
             />
           </Box>
@@ -368,6 +376,8 @@ export const register: Register = on => {
             {player.error}
           </Text>
         ) : null}
+        {/* 下面的插件（如 crush-style 的状态条）画的东西照样画在迷你播放器下面 */}
+        {below}
       </Box>
     )
   })

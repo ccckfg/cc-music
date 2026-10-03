@@ -74,3 +74,19 @@ test('迷你播放器：播放时显示曲目，按钮能暂停；空闲时不�
     await band.unmount()
   }
 })
+
+test('迷你播放器和下面插件画的状态条叠在一起，不把它盖掉', async ($, on) => {
+  fakeDaemon(on, { bandBelow: 'crush 状态条' })
+  await $.session.start(SESSION)
+
+  // 没在播放时只有下面那一行
+  const idle = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await idle.find({ type: 'Text', text: 'crush 状态条' })).toBeDefined()
+  await idle.unmount()
+
+  await $.command.run(music('晴天'))
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Text', text: '晴天 — 周杰伦' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'crush 状态条' })).toBeDefined()
+  await band.unmount()
+})
