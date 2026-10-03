@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 
 import type { Track } from '../protocol.ts'
+import { stripTags } from '../text.ts'
 import { fetchWithTimeout, type MusicProvider } from './types.ts'
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
@@ -73,7 +74,7 @@ export class BilibiliProvider implements MusicProvider {
       const track: Track = {
         provider: this.id,
         id: item.bvid,
-        title: plainText(item.title),
+        title: stripTags(plainText(item.title)),
         artists: item.author ? [item.author] : [],
         pageUrl: `https://www.bilibili.com/video/${item.bvid}`,
       }

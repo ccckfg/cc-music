@@ -3,8 +3,11 @@ import { randomBytes } from 'node:crypto'
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
 
-import { loadConfig } from './config.ts'
+import { loadConfig, resolveTool } from './config.ts'
+import { CoverService } from './cover.ts'
+import { Library } from './library.ts'
 import { log } from './log.ts'
+import { LyricsService } from './lyrics/index.ts'
 import { DAEMON_FILE, VERSION } from './paths.ts'
 import { Player } from './player/player.ts'
 import type { DaemonInfo } from './protocol.ts'
@@ -15,7 +18,10 @@ const IDLE_CHECK_MS = 60_000
 
 const config = loadConfig()
 const registry = new ProviderRegistry(config)
-const player = new Player(registry, config)
+const library = new Library()
+const player = new Player(registry, config, track => library.addHistory(track))
+const lyrics = new LyricsService()
+const covers = new CoverService(resolveTool(config.ffmpegPath, 'CC_MUSIC_FFMPEG', 'ffmpeg', 'shims/ffmpeg.exe'))
 const token = randomBytes(24).toString('hex')
 
 let lastActivity = Date.now()
@@ -25,6 +31,9 @@ const server = createApiServer({
   token,
   player,
   registry,
+  lyrics,
+  covers,
+  library,
   onActivity: () => {
     lastActivity = Date.now()
   },
@@ -53,6 +62,7 @@ async function shutdown(reason: string): Promise<void> {
   clearInterval(idleTimer)
   server.close()
   await player.shutdown().catch(error => log('warn', '关闭 mpv 失败', error))
+  library.flush()
   removeOwnDaemonFile()
   process.exit(0)
 }

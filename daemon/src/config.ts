@@ -11,6 +11,8 @@ export type Config = {
   defaultProvider: string;
   /** 启动音量 0–100 */
   volume: number;
+  /** ffmpeg 可执行文件（画封面用），空则从 PATH 和 scoop 目录里找 */
+  ffmpegPath: string;
   /** mpv 可执行文件，空则从 PATH 和 scoop 目录里找 */
   mpvPath: string;
   /** yt-dlp 可执行文件，空则从 PATH 和 scoop 目录里找 */
@@ -29,6 +31,7 @@ const DEFAULTS: Config = {
   defaultProvider: 'bilibili',
   volume: 60,
   mpvPath: '',
+  ffmpegPath: '',
   ytdlpPath: '',
   jsRuntime: 'node',
   cookiesFromBrowser: '',

@@ -19,6 +19,7 @@ const OBSERVED = ['time-pos', 'duration', 'pause', 'volume'] as const
 export class Player {
   private readonly registry: ProviderRegistry
   private readonly config: Config
+  private readonly onTrackStarted: (track: Track) => void
 
   private mpv: Mpv | undefined
   private starting: Promise<Mpv> | undefined
@@ -39,7 +40,8 @@ export class Player {
   private lastLoadError: string | undefined
   private consecutiveErrors = 0
 
-  constructor(registry: ProviderRegistry, config: Config) {
+  constructor(registry: ProviderRegistry, config: Config, onTrackStarted: (track: Track) => void = () => undefined) {
+    this.onTrackStarted = onTrackStarted
     this.registry = registry
     this.config = config
     this.volume = clampVolume(config.volume)
@@ -304,6 +306,8 @@ export class Player {
         this.error = null
         this.consecutiveErrors = 0
         this.bump()
+        const track = this.queue[this.index]
+        if (track) this.onTrackStarted(track)
         return
       }
       case 'end-file': {
@@ -315,7 +319,8 @@ export class Player {
         if (event['reason'] === 'error') {
           const detail = this.lastLoadError ?? (typeof event['file_error'] === 'string' ? event['file_error'] : '未知错误')
           const track = this.queue[this.index]
-          this.fail(`${track ? `《${track.title}》` : ''}加载失败：${detail}`)
+          const name = track ? (track.title.includes('《') ? track.title : `《${track.title}》`) : ''
+          this.fail(`${name}加载失败：${detail}`)
           if (this.consecutiveErrors < MAX_CONSECUTIVE_ERRORS && this.index + 1 < this.queue.length) {
             setTimeout(() => this.schedule(() => this.advance(false)).catch(() => undefined), 500)
           }

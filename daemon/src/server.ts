@@ -1,10 +1,22 @@
 import { timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 
+import type { CoverService } from './cover.ts'
+import type { Library } from './library.ts'
 import { log } from './log.ts'
+import type { LyricsService } from './lyrics/index.ts'
 import type { Player } from './player/player.ts'
 import { VERSION } from './paths.ts'
-import type { HealthResponse, PlayerCommand, SearchRequest, SearchResponse } from './protocol.ts'
+import type {
+  CoverRequest,
+  FavoriteRequest,
+  HealthResponse,
+  LyricsRequest,
+  PlayerCommand,
+  SearchRequest,
+  SearchResponse,
+  Track,
+} from './protocol.ts'
 import type { ProviderRegistry } from './providers/index.ts'
 
 const MAX_BODY_BYTES = 1024 * 1024
@@ -15,6 +27,9 @@ export type ServerDeps = {
   token: string;
   player: Player;
   registry: ProviderRegistry;
+  lyrics: LyricsService;
+  covers: CoverService;
+  library: Library;
   /** 每个改变状态的请求都调用，用于空闲退出计时 */
   onActivity: () => void;
   onShutdown: () => void;
@@ -80,6 +95,22 @@ async function handle(deps: ServerDeps, request: IncomingMessage, response: Serv
         throw new HttpError(400, error instanceof Error ? error.message : String(error))
       }
     }
+    case 'POST /lyrics': {
+      const { track } = (await readJson(request)) as Partial<LyricsRequest>
+      return send(response, 200, await deps.lyrics.get(requireTrack(track)))
+    }
+    case 'POST /cover': {
+      const body = (await readJson(request)) as Partial<CoverRequest>
+      return send(response, 200, await deps.covers.get(requireTrack(body.track), Number(body.columns), Number(body.rows)))
+    }
+    case 'GET /library':
+      return send(response, 200, deps.library.snapshot())
+    case 'POST /library/favorite': {
+      deps.onActivity()
+      const body = (await readJson(request)) as Partial<FavoriteRequest>
+      deps.library.setFavorite(requireTrack(body.track), body.favorite === true)
+      return send(response, 200, deps.library.snapshot())
+    }
     case 'POST /shutdown': {
       send(response, 200, { ok: true })
       deps.onShutdown()
@@ -96,6 +127,13 @@ function getProvider(registry: ProviderRegistry, id: string | undefined) {
   } catch (error) {
     throw new HttpError(400, error instanceof Error ? error.message : String(error))
   }
+}
+
+function requireTrack(track: Track | undefined): Track {
+  if (!track || typeof track.provider !== 'string' || typeof track.id !== 'string' || typeof track.title !== 'string') {
+    throw new HttpError(400, '缺少曲目')
+  }
+  return track
 }
 
 function isAuthorized(request: IncomingMessage, token: string): boolean {

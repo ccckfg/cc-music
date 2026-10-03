@@ -102,3 +102,55 @@ export type DaemonInfo = {
   version: string;
   startedAt: string;
 };
+
+/** 一行带时间的歌词。 */
+export type LyricLine = {
+  /** 这一行开始的时间（秒） */
+  time: number;
+  text: string;
+};
+
+/** `POST /lyrics` 的回复；找不到歌词时 synced 和 plain 都是 null。 */
+export type LyricsResponse = {
+  /** 曲目的 `provider:id`，mod 用它丢弃过期的回复 */
+  key: string;
+  synced: LyricLine[] | null;
+  plain: string | null;
+  /** 歌词来源，如 `lrclib`；找不到时为 null */
+  source: string | null;
+};
+
+export type LyricsRequest = { track: Track };
+
+export type CoverRequest = {
+  track: Track;
+  /** 字符画的列数和行数；每格是上下两个像素（▀），所以像素是 columns × rows*2 */
+  columns: number;
+  rows: number;
+};
+
+/** `POST /cover` 的回复：可直接交给 Raster 的格子。没有封面时 cells 为 null。 */
+export type CoverResponse = {
+  key: string;
+  columns: number;
+  rows: number;
+  /** RasterProps.cells 的格式：每格 [码点, 前景色, 背景色] 三个小端 u32，base64 */
+  cells: string | null;
+};
+
+export type HistoryEntry = {
+  track: Track;
+  /** ISO 时间 */
+  playedAt: string;
+};
+
+export type LibraryResponse = {
+  favorites: Track[];
+  /** 最近播放在前 */
+  history: HistoryEntry[];
+};
+
+export type FavoriteRequest = {
+  track: Track;
+  favorite: boolean;
+};

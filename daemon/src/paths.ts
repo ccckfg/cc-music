@@ -8,4 +8,4 @@ export const CONFIG_FILE = join(DATA_DIR, 'config.json')
 export const DAEMON_FILE = join(DATA_DIR, 'daemon.json')
 export const LOG_FILE = join(DATA_DIR, 'daemon.log')
 
-export const VERSION = '0.1.0'
+export const VERSION = '0.2.0'
