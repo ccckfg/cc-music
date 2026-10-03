@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { loadConfig, resolveTool } from './config.ts'
 import { CoverService } from './cover.ts'
 import { Library } from './library.ts'
+import { isHealthy, readDaemonInfo } from './instance.ts'
 import { log } from './log.ts'
 import { LyricsService } from './lyrics/index.ts'
 import { DAEMON_FILE, INSTALL_FILE, VERSION } from './paths.ts'
@@ -16,6 +17,13 @@ import { ProviderRegistry } from './providers/index.ts'
 import { createApiServer } from './server.ts'
 
 const IDLE_CHECK_MS = 60_000
+
+// 只留一个 daemon：已经有一个健康的在跑，就让它继续，自己退出
+const existing = readDaemonInfo()
+if (existing && existing.pid !== process.pid && (await isHealthy(existing))) {
+  log('info', `已有 daemon（pid ${existing.pid}）在运行，本进程退出`)
+  process.exit(0)
+}
 
 const config = loadConfig()
 const registry = new ProviderRegistry(config)
@@ -51,6 +59,11 @@ server.listen(0, '127.0.0.1', () => {
 })
 
 const idleTimer = setInterval(() => {
+  // daemon.json 被另一个 daemon 接管了：没在放歌就让位，免得留下没人找得到的进程
+  if (!player.isBusy && readDaemonInfo()?.pid !== process.pid) {
+    void shutdown('daemon.json 已由另一个 daemon 接管')
+    return
+  }
   if (config.idleExitMinutes <= 0 || player.isBusy) {
     if (player.isBusy) lastActivity = Date.now()
     return

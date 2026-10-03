@@ -12,7 +12,8 @@ import type {
 } from '../types'
 import { errorText, type Host } from './host.ts'
 
-const LAUNCH_TIMEOUT_MS = 20_000
+/** 比 launch.ts 自己等 daemon 就绪的 30 秒多留一些 */
+const LAUNCH_TIMEOUT_MS = 40_000
 
 type LaunchResult = ({ status: 'running' | 'started' } & DaemonInfo) | { status: 'failed'; error: string }
 

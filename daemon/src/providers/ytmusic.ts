@@ -1,4 +1,4 @@
-import { Innertube } from 'youtubei.js'
+import type { Innertube } from 'youtubei.js'
 
 import type { Config } from '../config.ts'
 import type { Track } from '../protocol.ts'
@@ -64,15 +64,20 @@ export class YouTubeMusicProvider implements MusicProvider {
   }
 
   private getClient(): Promise<Innertube> {
+    // youtubei.js 很大，用到才加载，daemon 启动快很多。
     // 默认 fetch 没有超时，网络异常时会一直挂起，所以换成带超时的
-    this.client ??= Innertube.create({
-      retrieve_player: false,
-      lang: 'zh-CN',
-      fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }),
-    }).catch(error => {
-      this.client = undefined
-      throw error
-    })
+    this.client ??= import('youtubei.js')
+      .then(({ Innertube }) =>
+        Innertube.create({
+          retrieve_player: false,
+          lang: 'zh-CN',
+          fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }),
+        }),
+      )
+      .catch(error => {
+        this.client = undefined
+        throw error
+      })
     return this.client
   }
 }
