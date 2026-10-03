@@ -79,7 +79,7 @@ claude --plugin-dir "D:/Project N2/cc-music/mod"
 
 面板的位置由 Claude Code 决定：全屏布局（默认；`CLAUDE_CODE_NO_FLICKER=0` 或 tmux 里是主屏幕布局）且终端宽 110 列以上时，停靠在对话右侧成为侧边栏，竖着排、歌词占满高度；否则放在输入框上方。全屏布局下 `/music <歌名>` 开始播放时也会自动打开侧边栏。
 
-面板获得焦点后：`1`–`5` 切换标签页（正在播放、搜索、队列、收藏、历史），`p` / `n` / `b` 播放控制，`f` 收藏当前歌曲，Tab 和方向键在按钮间移动。封面只在终端里显示。
+面板获得焦点后：`1`–`5` 切换标签页（正在播放、搜索、队列、收藏、历史），`p` / `n` / `b` 播放控制，`f` 收藏当前歌曲，Tab 和方向键在按钮间移动。封面只在终端里显示，用块字符画成：侧边栏拖得越宽、终端越高，封面越大越清楚。
 
 ## 配置
 
@@ -128,6 +128,7 @@ npm run daemon     # 前台运行 daemon（调试用）
 - mod 的约束：`$` 只能在 hook 里直接调用，不能传给其他函数，所以 `register.tsx` 在 `session.start` 里把能力包成 `Host`（见 `hooks/host.ts`）；`$.state` 的 atom 必须声明在使用它的文件里
 - 面板必须由命令或按钮 hook 自己的 `$` 调 `$.ui.open`，引擎才认作“用户要求的”、任何宽度都摆出来；用 `session.start` 里存下的 `$` 打开会被当成插件自己弹的，要 144 列才显示
 - 面板的画法在 `hooks/view.tsx`（纯函数，不碰 `$`），状态和动作在 `register.tsx`
+- 封面：daemon 交出保持原比例、长边 256 的 RGB 像素，`hooks/cover.ts` 按格子裁切缩放，每格在块元素（U+2580–259F：象限和 1/8 横竖条）里挑误差最小的字符和两种颜色。Raster 只收 BMP 字符，Unicode 16 的八分块（U+1CD00）用不了；一个 Raster 最多 1024 种前景/背景组合，所以封面限制在 40×20 格以内
 - 开发时用 `claude --plugin-dir mod` 直接加载项目里的 mod，改了就热重载。不要用目录 junction 把 mod 链进会话的 mods 目录：Windows 上热重载监视不到 junction 背后的改动，会话会一直跑旧代码
 - mod 不在仓库里时（例如被拷到别处），靠 `~/.cc-music/install.json`（daemon 每次启动时写）找到 `daemon/src/launch.ts`；也可以用环境变量 `CC_MUSIC_DAEMON` 指定
 - 在 Git Bash 里运行 `claude -p "/music ..."` 时先 `export MSYS_NO_PATHCONV=1`，否则 `/music` 会被改写成 Windows 路径

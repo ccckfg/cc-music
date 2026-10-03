@@ -83,13 +83,13 @@ export type LyricsResponse = {
   source: string | null;
 };
 
-/** `POST /cover` 的回复：可直接交给 Raster 的格子。没有封面时 cells 为 null。 */
+/** `POST /cover` 的回复：保持原图比例、长边不超过 256 的 RGB 像素。没有封面时 pixels 为 null、宽高为 0。 */
 export type CoverResponse = {
   key: string;
-  columns: number;
-  rows: number;
-  /** RasterProps.cells 的格式：每格 [码点, 前景色, 背景色] 三个小端 u32，base64 */
-  cells: string | null;
+  width: number;
+  height: number;
+  /** width*height 个像素，每个 R、G、B 三字节，逐行排列，base64 */
+  pixels: string | null;
 };
 
 export type HistoryEntry = {

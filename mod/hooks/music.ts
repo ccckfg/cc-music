@@ -19,10 +19,6 @@ import { errorText, type Host } from './host.ts'
 
 const SEARCH_LIMIT = 10
 
-/** 向 daemon 要的封面源图：64 列 × 32 行半格 = 64×64 像素，面板再按宽度缩放成象限字符画 */
-export const COVER_COLUMNS = 64
-export const COVER_ROWS = 32
-
 /** 发命令给 daemon，并立刻把返回的状态写进 $.state，迷你播放器不用等下一次轮询。 */
 export async function send(host: Host, cmd: PlayerCommand): Promise<PlayerSnapshot> {
   const player = await daemon.command(host, cmd)
@@ -126,7 +122,7 @@ export async function syncTrackExtras(host: Host, player: PlayerSnapshot | null)
   if (coverKey !== key && (await host.isPaneOpen()) && (await host.getCover())?.key !== key) {
     coverKey = key
     daemon
-      .cover(host, track, COVER_COLUMNS, COVER_ROWS)
+      .cover(host, track)
       .then(cover => host.setCover(cover))
       .catch(error => host.debug(`封面失败：${errorText(error)}`))
       .finally(() => {

@@ -1,15 +1,15 @@
-// 封面转字符画：下载封面，用 ffmpeg 缩放裁成正方形，每格用 ▀ 画上下两个像素。
+// 封面：下载封面，用 ffmpeg 缩到长边不超过 SIZE、保持原比例，交出 RGB 像素。
+// 裁切和画成字符都在 mod 里做，它知道面板有多大。
 import { spawn } from 'node:child_process'
 
 import { log } from './log.ts'
 import type { CoverResponse, Track } from './protocol.ts'
 import { fetchWithTimeout } from './providers/types.ts'
 
-const UPPER_HALF_BLOCK = 0x2580
 const CACHE_SIZE = 50
 const FFMPEG_TIMEOUT_MS = 10_000
-const MAX_COLUMNS = 64
-const MAX_ROWS = 32
+/** 长边的像素数：最宽的侧边栏封面约 40 格，每格 4–6 个像素已经够用 */
+const SIZE = 256
 
 export class CoverService {
   private readonly ffmpegPath: string | undefined
@@ -19,61 +19,47 @@ export class CoverService {
     this.ffmpegPath = ffmpegPath
   }
 
-  get(track: Track, columns: number, rows: number): Promise<CoverResponse> {
-    const cols = clamp(columns, 4, MAX_COLUMNS)
-    const rws = clamp(rows, 2, MAX_ROWS)
+  get(track: Track): Promise<CoverResponse> {
     const key = `${track.provider}:${track.id}`
-    const cacheKey = `${key}@${cols}x${rws}`
-    const hit = this.cache.get(cacheKey)
+    const hit = this.cache.get(key)
     if (hit) return hit
-    const pending = this.render(track, cols, rws)
-      .then(cells => ({ key, columns: cols, rows: rws, cells }))
+    const pending = this.render(track)
+      .then(image => ({ key, ...image }))
       .catch(error => {
         log('warn', `封面失败：${track.title}`, error)
-        this.cache.delete(cacheKey)
-        return { key, columns: cols, rows: rws, cells: null }
+        this.cache.delete(key)
+        return { key, width: 0, height: 0, pixels: null }
       })
-    this.cache.set(cacheKey, pending)
+    this.cache.set(key, pending)
     if (this.cache.size > CACHE_SIZE) this.cache.delete(this.cache.keys().next().value as string)
     return pending
   }
 
-  private async render(track: Track, columns: number, rows: number): Promise<string | null> {
-    if (!track.thumbnail || !this.ffmpegPath) return null
+  private async render(track: Track): Promise<Omit<CoverResponse, 'key'>> {
+    if (!track.thumbnail || !this.ffmpegPath) return { width: 0, height: 0, pixels: null }
     const response = await fetchWithTimeout(track.thumbnail, { headers: { 'User-Agent': 'Mozilla/5.0' } })
     if (!response.ok) throw new Error(`下载封面失败：HTTP ${response.status}`)
-    const image = Buffer.from(await response.arrayBuffer())
+    const ppm = await this.decode(Buffer.from(await response.arrayBuffer()))
 
-    const width = columns
-    const height = rows * 2
-    const rgb = await this.decode(image, width, height)
-    if (rgb.length < width * height * 3) throw new Error(`ffmpeg 输出不完整：${rgb.length} 字节`)
-
-    const cells = Buffer.alloc(columns * rows * 12)
-    const pixel = (x: number, y: number) => {
-      const i = (y * width + x) * 3
-      return ((rgb[i] ?? 0) << 16) | ((rgb[i + 1] ?? 0) << 8) | (rgb[i + 2] ?? 0)
-    }
-    for (let row = 0; row < rows; row += 1) {
-      for (let col = 0; col < columns; col += 1) {
-        const offset = (row * columns + col) * 12
-        cells.writeUInt32LE(UPPER_HALF_BLOCK, offset)
-        cells.writeUInt32LE(pixel(col, row * 2), offset + 4)
-        cells.writeUInt32LE(pixel(col, row * 2 + 1), offset + 8)
-      }
-    }
-    return cells.toString('base64')
+    // PPM（P6）：文本头 "P6 宽 高 255" 后面跟一个空白，然后是 RGB 像素
+    const header = /^P6\s+(\d+)\s+(\d+)\s+255\s/.exec(ppm.subarray(0, 32).toString('latin1'))
+    if (!header) throw new Error('ffmpeg 输出不是 PPM')
+    const width = Number(header[1])
+    const height = Number(header[2])
+    const pixels = ppm.subarray(header[0].length, header[0].length + width * height * 3)
+    if (pixels.length < width * height * 3) throw new Error(`ffmpeg 输出不完整：${pixels.length} 字节`)
+    return { width, height, pixels: pixels.toString('base64') }
   }
 
-  /** 任意格式的图片 → 居中裁成 width×height 的 rgb24 像素。 */
-  private decode(image: Buffer, width: number, height: number): Promise<Buffer> {
+  /** 任意格式的图片 → 长边不超过 SIZE 的 PPM（不放大）。 */
+  private decode(image: Buffer): Promise<Buffer> {
     const args = [
       '-v', 'error',
       '-i', 'pipe:0',
-      '-vf', `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`,
+      '-vf', `scale='min(${SIZE},iw)':'min(${SIZE},ih)':force_original_aspect_ratio=decrease:flags=area`,
       '-frames:v', '1',
-      '-f', 'rawvideo',
-      '-pix_fmt', 'rgb24',
+      '-f', 'image2pipe',
+      '-c:v', 'ppm',
       'pipe:1',
     ]
     return new Promise((resolve, reject) => {
@@ -95,8 +81,4 @@ export class CoverService {
       child.stdin.end(image)
     })
   }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, Math.trunc(Number(value) || min)))
 }

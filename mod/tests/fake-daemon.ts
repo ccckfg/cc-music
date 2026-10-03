@@ -2,6 +2,7 @@ import type { On, RenderElement } from 'claude-code'
 import { expect, mock } from 'claude-code/testing'
 
 import type { LibraryResponse, PlayerCommand, PlayerSnapshot, Track } from '../types'
+import { DAEMON_VERSION } from '../hooks/daemon.ts'
 
 export const SUNNY: Track = {
   provider: 'bilibili',
@@ -55,8 +56,8 @@ export const PANE = {
   props: { title: 'cc-music', isFocused: true, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
 } as const
 
-/** 两格的“封面”：▀ 上红下蓝。Raster 的 cells 是 [码点, 前景, 背景] 三个小端 u32 的 base64 */
-export const COVER_CELLS = 'gCUAAAAA/wD/AAAAgCUAAAAA/wD/AAAA'
+/** 2×2 像素的“封面”：红 绿 / 蓝 白，每个像素 R、G、B 三字节，base64 */
+export const COVER_PIXELS = '/wAAAP8AAAD/////'
 
 export type FakeDaemon = {
   commands: PlayerCommand[];
@@ -77,7 +78,7 @@ export type FakeOptions = {
 }
 
 export function fakeDaemon(on: On, options: FakeOptions = {}): FakeDaemon {
-  const version = options.version ?? '0.2.0'
+  const version = options.version ?? DAEMON_VERSION
   const toasts: string[] = []
   const opened: FakeDaemon['opened'] = []
   const library: LibraryResponse = { favorites: [], history: [] }
@@ -137,7 +138,7 @@ export function fakeDaemon(on: On, options: FakeOptions = {}): FakeDaemon {
       }
       case '/cover': {
         const track = body['track'] as Track
-        answer = { key: `${track.provider}:${track.id}`, columns: 2, rows: 1, cells: COVER_CELLS }
+        answer = { key: `${track.provider}:${track.id}`, width: 2, height: 2, pixels: COVER_PIXELS }
         break
       }
       case '/library':

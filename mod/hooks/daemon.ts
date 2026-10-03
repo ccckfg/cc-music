@@ -151,7 +151,7 @@ export async function shutdown(host: Host): Promise<boolean> {
 }
 
 /** mod 需要的 daemon 版本；更旧的 daemon 没有歌词、封面、收藏接口，`/music restart` 换新。 */
-export const DAEMON_VERSION = '0.2.0'
+export const DAEMON_VERSION = '0.3.0'
 
 /** 正在运行的 daemon 的版本；没在运行时 undefined。 */
 export async function runningVersion(host: Host): Promise<string | undefined> {
@@ -162,8 +162,8 @@ export function lyrics(host: Host, track: Track): Promise<LyricsResponse> {
   return call(host, 'POST', '/lyrics', { track })
 }
 
-export function cover(host: Host, track: Track, columns: number, rows: number): Promise<CoverResponse> {
-  return call(host, 'POST', '/cover', { track, columns, rows })
+export function cover(host: Host, track: Track): Promise<CoverResponse> {
+  return call(host, 'POST', '/cover', { track })
 }
 
 export function library(host: Host): Promise<LibraryResponse> {

@@ -303,7 +303,7 @@ export const register: Register = on => {
       {
         columns: e.props.bodyColumns,
         isDocked: e.props.placement === 'dock',
-        rows: e.viewport?.rows ?? 24,
+        rows: e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 24,
         tab: await read($, paneTabAtom),
         player: await read($, playerAtom),
         lyrics: await read($, lyricsAtom),

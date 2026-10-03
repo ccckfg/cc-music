@@ -88,13 +88,13 @@ const PROVIDER_NAME: Record<string, string> = { bilibili: '哔哩哔哩', ytmusi
 
 /** 列表最多画多少首 */
 const MAX_LIST = 50
-/** 侧边栏里封面的宽度范围（格，取偶数：高度取一半，正好是正方形） */
+/** 侧边栏里封面的宽度范围（格，取偶数：高度取一半，正好是正方形）；上限也让颜色对数留在 Raster 的 1024 以内 */
 const COVER_MIN = 12
-const COVER_MAX = 36
-/** 侧边栏里除了封面、标题和歌词，其余部分大约占的行数 */
-const SIDEBAR_CHROME_ROWS = 19
+const COVER_MAX = 40
+/** 侧边栏里除了封面、标题和歌词以外的行数：标题栏、标签、曲目信息、进度、控制、音量、分隔线和各处空行 */
+const SIDEBAR_CHROME_ROWS = 17
 /** 侧边栏里至少留给歌词的行数 */
-const MIN_LYRIC_ROWS = 5
+const MIN_LYRIC_ROWS = 4
 /** 横排（输入框上方）时封面的宽度和歌词行数 */
 const INLINE_COVER = 20
 const INLINE_LYRIC_ROWS = 5
@@ -178,10 +178,12 @@ function NowTab(kit: Kit, model: PaneModel, width: number, actions: PaneActions)
   }
 
   if (model.isDocked || width < MIN_COLUMNS_FOR_ROW) {
-    const coverColumns = even(clamp(Math.min(width - 6, (model.rows - SIDEBAR_CHROME_ROWS - MIN_LYRIC_ROWS) * 2), COVER_MIN, COVER_MAX))
-    const cover = CoverArt(kit, model.cover, track, coverColumns)
     const titleLines = wrapText(track.title, width - 2).slice(0, 2)
-    const chromeRows = SIDEBAR_CHROME_ROWS + (cover ? coverColumns / 2 + 2 : 0) + titleLines.length
+    // 封面尽量大：宽度用满，高度给歌词留够行数
+    const coverRows = model.rows - SIDEBAR_CHROME_ROWS - titleLines.length - MIN_LYRIC_ROWS
+    const coverColumns = even(clamp(Math.min(width, coverRows * 2), COVER_MIN, COVER_MAX))
+    const cover = CoverArt(kit, model.cover, track, coverColumns)
+    const chromeRows = SIDEBAR_CHROME_ROWS + (cover ? coverColumns / 2 : 0) + titleLines.length
     const lyricRows = model.isDocked ? Math.max(MIN_LYRIC_ROWS, model.rows - chromeRows) : INLINE_LYRIC_ROWS
     return (
       <Box flexDirection="column" width={width}>
@@ -205,7 +207,7 @@ function NowTab(kit: Kit, model: PaneModel, width: number, actions: PaneActions)
 
   // 输入框上方：封面在左，信息和控制在右，歌词在下
   const cover = CoverArt(kit, model.cover, track, INLINE_COVER)
-  const infoWidth = width - (cover ? INLINE_COVER + 4 : 0)
+  const infoWidth = width - (cover ? INLINE_COVER + 2 : 0)
   return (
     <Box flexDirection="column" width={width}>
       <Box flexDirection="row" columnGap={2}>
@@ -223,7 +225,7 @@ function NowTab(kit: Kit, model: PaneModel, width: number, actions: PaneActions)
   )
 }
 
-/** 带圆角边框的封面；没有封面或界面画不了 Raster 时返回 null。 */
+/** 正方形封面（不加边框，格子都留给图）；没有封面或界面画不了 Raster 时返回 null。 */
 function CoverArt(kit: Kit, cover: CoverResponse | null, track: Track, columns: number): RenderElement | null {
   const { Box, Raster } = kit
   if (!Raster || !cover || cover.key !== trackKey(track)) return null
@@ -231,7 +233,7 @@ function CoverArt(kit: Kit, cover: CoverResponse | null, track: Track, columns: 
   const cells = coverCells(cover, columns, rows)
   if (!cells) return null
   return (
-    <Box borderStyle="round" borderColor={C.border} flexShrink={0}>
+    <Box flexShrink={0}>
       <Raster key="cover" columns={columns} rows={rows} cells={cells} />
     </Box>
   )

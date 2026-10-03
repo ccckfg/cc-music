@@ -101,7 +101,7 @@ async function handle(deps: ServerDeps, request: IncomingMessage, response: Serv
     }
     case 'POST /cover': {
       const body = (await readJson(request)) as Partial<CoverRequest>
-      return send(response, 200, await deps.covers.get(requireTrack(body.track), Number(body.columns), Number(body.rows)))
+      return send(response, 200, await deps.covers.get(requireTrack(body.track)))
     }
     case 'GET /library':
       return send(response, 200, deps.library.snapshot())
