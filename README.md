@@ -4,7 +4,7 @@
 
 - `/music 晴天` 搜索并播放，`/music next`、`/music vol 40` 等控制
 - 输入框上方的迷你播放器：曲名、进度、上一首 / 暂停 / 下一首 / 面板按钮
-- `/music` 打开面板：封面字符画、滚动歌词、搜索、队列、收藏、播放历史
+- `/music` 打开面板：封面字符画、滚动歌词、搜索、队列、收藏、播放历史；全屏布局下停靠在右侧成侧边栏
 - 直接对 Claude 说“放点周杰伦”，它会调用 `music` 工具帮你点歌
 - 音源可插拔：目前有哔哩哔哩（默认，国内直连）和 YouTube Music
 
@@ -77,6 +77,8 @@ claude --plugin-dir "D:/Project N2/cc-music/mod"
 
 迷你播放器获得焦点（ctrl+x tab）后，`b` / `p` / `n` / `o` 分别是上一首 / 暂停 / 下一首 / 打开面板。
 
+面板的位置由 Claude Code 决定：全屏布局（默认；`CLAUDE_CODE_NO_FLICKER=0` 或 tmux 里是主屏幕布局）且终端宽 110 列以上时，停靠在对话右侧成为侧边栏，竖着排、歌词占满高度；否则放在输入框上方。全屏布局下 `/music <歌名>` 开始播放时也会自动打开侧边栏。
+
 面板获得焦点后：`1`–`5` 切换标签页（正在播放、搜索、队列、收藏、历史），`p` / `n` / `b` 播放控制，`f` 收藏当前歌曲，Tab 和方向键在按钮间移动。封面只在终端里显示。
 
 ## 配置
@@ -124,5 +126,6 @@ npm run daemon     # 前台运行 daemon（调试用）
 
 - `mod/tsconfig.json` 继承 Claude Code 生成的 `mod/.claude-plugin/types/tsconfig.json`；刚检出时先运行一次 `npm test` 或 `claude --plugin-dir mod` 生成它
 - mod 的约束：`$` 只能在 hook 里直接调用，不能传给其他函数，所以 `register.tsx` 在 `session.start` 里把能力包成 `Host`（见 `hooks/host.ts`）；`$.state` 的 atom 必须声明在使用它的文件里
+- 面板必须由命令或按钮 hook 自己的 `$` 调 `$.ui.open`，引擎才认作“用户要求的”、任何宽度都摆出来；用 `session.start` 里存下的 `$` 打开会被当成插件自己弹的，要 144 列才显示
 - 面板的画法在 `hooks/view.tsx`（纯函数，不碰 `$`），状态和动作在 `register.tsx`
 - 在 Git Bash 里运行 `claude -p "/music ..."` 时先 `export MSYS_NO_PATHCONV=1`，否则 `/music` 会被改写成 Windows 路径

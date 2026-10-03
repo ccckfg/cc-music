@@ -197,18 +197,40 @@ const SIMPLE: Record<string, PlayerCommand> = {
   clear: { type: 'clear' }, 清空: { type: 'clear' },
 }
 
-/** 执行 `/music` 后面的参数，返回给人看的结果。出错时抛出，消息直接给用户看。 */
-export async function runMusic(host: Host, args: string): Promise<string> {
+const PANE_VERBS = new Set(['', 'panel', 'ui', '面板'])
+
+/**
+ * `/music` 的结果。`pane` 告诉命令 hook 要不要打开面板：`open` 总是打开（`/music`、`/music panel`），
+ * `sidebar` 只在能停靠成侧边栏时打开（开始放一首歌）。面板要由命令 hook 用自己的 `$` 打开，
+ * 引擎才认作“用户要求的”，所以这里只给出意图。
+ */
+export type MusicReply = { text: string; pane?: 'open' | 'sidebar' }
+
+/** 面板摆上屏幕之后：记下它开着，取封面和收藏。 */
+export async function afterPaneOpened(host: Host): Promise<void> {
+  await host.setPaneOpen(true)
+  await syncTrackExtras(host, await host.getPlayer())
+  await refreshLibrary(host).catch(() => undefined)
+}
+
+/** 执行 `/music` 后面的参数，返回给人看的结果和面板意图。出错时抛出，消息直接给用户看。 */
+export async function runMusic(host: Host, args: string): Promise<MusicReply> {
+  let isPlayNow = false
+  const text = await runMusicText(host, args, () => {
+    isPlayNow = true
+  })
+  const verb = (args.trim().split(/\s+/)[0] ?? '').toLowerCase()
+  if (PANE_VERBS.has(verb)) return { text, pane: 'open' }
+  return isPlayNow ? { text, pane: 'sidebar' } : { text }
+}
+
+async function runMusicText(host: Host, args: string, onPlayNow: () => void): Promise<string> {
   const text = args.trim()
   const [head = '', ...restParts] = text.split(/\s+/)
   const verb = head.toLowerCase()
   const rest = restParts.join(' ')
 
-  if (text === '' || verb === 'panel' || verb === 'ui' || verb === '面板') {
-    const status = describeStatus(await daemon.peekState(host))
-    return (await host.openPane()) ? `已打开 cc-music 面板。\n${status}` : status
-  }
-  if (verb === 'status' || verb === '状态') return describeStatus(await daemon.peekState(host))
+  if (PANE_VERBS.has(verb) || verb === 'status' || verb === '状态') return describeStatus(await daemon.peekState(host))
   if (verb === 'help' || verb === '帮助' || verb === '?') return HELP
 
   const simple = SIMPLE[verb]
@@ -322,6 +344,7 @@ export async function runMusic(host: Host, args: string): Promise<string> {
   if (/^\d+$/.test(text)) {
     const track = await resultAt(host, Number(text))
     await playNow(host, [track])
+    onPlayNow()
     return `▶ 正在加载：${trackLabel(track)}`
   }
 
@@ -329,6 +352,7 @@ export async function runMusic(host: Host, args: string): Promise<string> {
   const top = result.tracks[0]
   if (!top) return describeResults(result.tracks, result.provider)
   await playNow(host, [top])
+  onPlayNow()
   return [
     `▶ 正在加载：${trackLabel(top)}`,
     '',
@@ -366,12 +390,12 @@ export async function runTool(host: Host, input: ToolInput): Promise<string> {
       return player && player.queue.length > 1 ? `${describeStatus(player)}\n\n${describeQueue(player)}` : describeStatus(player)
     }
     case 'lyrics':
-      return runMusic(host, 'lyrics')
+      return runMusicText(host, 'lyrics', () => undefined)
     case 'favorite':
       return toggleFavorite(host)
     case 'volume': {
       if (typeof input.volume !== 'number') throw new Error('action=volume 需要 volume（0–100）')
-      return runMusic(host, `vol ${Math.round(input.volume)}`)
+      return runMusicText(host, `vol ${Math.round(input.volume)}`, () => undefined)
     }
     case 'play':
     case 'queue':

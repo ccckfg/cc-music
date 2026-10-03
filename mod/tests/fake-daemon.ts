@@ -14,9 +14,14 @@ export const SUNNY: Track = {
 export const RICE: Track = { ...SUNNY, id: 'BV1rice', title: '稻香', durationSec: 223, pageUrl: 'https://www.bilibili.com/video/BV1rice' }
 
 /** 像用户在提示符里敲 `/music <args>` 那样运行命令 */
-export function music(args: string) {
-  return { command: 'music', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } } as const
+export function music(args: string, presentation: { isFullscreen: boolean; columns: number } = MAIN_SCREEN) {
+  return { command: 'music', args, origin: { kind: 'composer' }, presentation } as const
 }
+
+/** 主屏幕布局：面板只能放在输入框上方 */
+export const MAIN_SCREEN = { isFullscreen: false, columns: 120 }
+/** 全屏布局、终端够宽：面板停靠成侧边栏 */
+export const FULLSCREEN = { isFullscreen: true, columns: 160 }
 
 export const SESSION = { cwd: 'C:/work', surface: 'terminal', isInteractive: true } as const
 
@@ -57,7 +62,8 @@ export type FakeDaemon = {
   commands: PlayerCommand[];
   searches: string[];
   toasts: string[];
-  opened: string[];
+  /** 打开过的面板：id 和想要的列数 */
+  opened: { id: string; columns: number | undefined }[];
   library: LibraryResponse;
   clock: ReturnType<typeof mock.clock>;
 }
@@ -65,10 +71,10 @@ export type FakeDaemon = {
 /** 一个假的 daemon：桩住会话、env、fs、http，记下 mod 发来的命令，按命令更新状态。 */
 export function fakeDaemon(on: On, version = '0.2.0'): FakeDaemon {
   const toasts: string[] = []
-  const opened: string[] = []
+  const opened: FakeDaemon['opened'] = []
   const library: LibraryResponse = { favorites: [], history: [] }
   on('ui.open', (_$, e) => {
-    opened.push(e.id)
+    opened.push({ id: e.id, columns: e.columns })
     return { value: { isPlaced: true } }
   })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))

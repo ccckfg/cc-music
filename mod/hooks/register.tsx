@@ -8,6 +8,7 @@ import * as daemon from './daemon.ts'
 import { formatTime, progressBar, trackLabel } from './format.ts'
 import { errorText, type Host } from './host.ts'
 import {
+  afterPaneOpened,
   enqueue,
   playNow,
   refreshLibrary,
@@ -39,6 +40,10 @@ const TOOL_NAME = 'mcp__cc-music__music'
 const PANE = 'cc-music'
 /** 面板在输入框上方展开时想要的高度 */
 const PANE_ROWS = 24
+/** 面板停靠成侧边栏时想要的宽度 */
+const PANE_COLUMNS = 48
+/** 全屏布局下终端至少这么宽，面板才会停靠成侧边栏 */
+const SIDEBAR_MIN_COLUMNS = 110
 
 /** 播放中每秒取一次状态；空闲时每 IDLE_EVERY 秒一次 */
 const POLL_MS = 1000
@@ -152,6 +157,13 @@ const paneActions: PaneActions = {
   toggleFavorite: (track: Track) => void act(async h => h.toast(await toggleFavorite(h, track))),
 }
 
+/** 告诉用户面板摆在了哪、怎样才能变成侧边栏。 */
+function placementNote(isFullscreen: boolean, columns: number): string {
+  if (isFullscreen && columns >= SIDEBAR_MIN_COLUMNS) return '已在右侧打开 cc-music 侧边栏。'
+  if (isFullscreen) return `已在输入框上方打开面板。终端现在 ${columns} 列，拉宽到 ${SIDEBAR_MIN_COLUMNS} 列以上它会停靠成侧边栏。`
+  return '已在输入框上方打开面板。当前是主屏幕布局（设置了 CLAUDE_CODE_NO_FLICKER=0 或在 tmux 里），只有全屏布局才能停靠成侧边栏。'
+}
+
 async function switchTab(host: Host, tab: PaneTab): Promise<void> {
   await host.setPaneTab(tab)
   if (tab === 'favorites' || tab === 'history') await refreshLibrary(host)
@@ -180,16 +192,6 @@ export const register: Register = on => {
         }
       },
       sleep: ms => $.clock.sleep(ms),
-      openPane: async () => {
-        const opened = await $.ui.open({ id: PANE, title: 'cc-music', rows: PANE_ROWS })
-        if (!opened.isPlaced) return false
-        await update($, paneOpenAtom, () => true)
-        if (host) {
-          void syncTrackExtras(host, await read($, playerAtom))
-          void refreshLibrary(host).catch(() => undefined)
-        }
-        return true
-      },
       getPlayer: () => read($, playerAtom),
       setPlayer: player => update($, playerAtom, () => player).then(() => undefined),
       getLastSearch: () => read($, lastSearchAtom),
@@ -241,9 +243,23 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: COMMAND }, async (_$, e) => {
+  on('command.run', { command: COMMAND }, async ($, e) => {
     try {
-      return { text: await runMusic(requireHost(), e.args) }
+      const h = requireHost()
+      const reply = await runMusic(h, e.args)
+      const { isFullscreen, columns } = e.presentation
+      const canDock = isFullscreen && columns >= SIDEBAR_MIN_COLUMNS
+      if (reply.pane === 'open' || (reply.pane === 'sidebar' && canDock)) {
+        // 必须用这个命令 hook 自己的 `$` 打开：引擎据此认作用户要求的，任何宽度都会摆出来
+        const opened = await $.ui.open({ id: PANE, title: 'cc-music', rows: PANE_ROWS, columns: PANE_COLUMNS })
+        if (opened.isPlaced) {
+          await afterPaneOpened(h)
+          if (reply.pane === 'open') return { text: `${placementNote(isFullscreen, columns)}\n${reply.text}` }
+        } else {
+          return { text: `面板暂时摆不下：${opened.reason}\n${reply.text}` }
+        }
+      }
+      return { text: reply.text }
     } catch (error) {
       return { text: `cc-music：${errorText(error)}` }
     }
@@ -275,6 +291,8 @@ export const register: Register = on => {
       },
       {
         columns: e.props.bodyColumns,
+        isDocked: e.props.placement === 'dock',
+        rows: e.viewport?.rows ?? 24,
         tab: await read($, paneTabAtom),
         player: await read($, playerAtom),
         lyrics: await read($, lyricsAtom),
@@ -323,7 +341,16 @@ export const register: Register = on => {
               onPress={() => void press({ type: 'toggle' })}
             />
             {hasSideButtons ? <Button key="next" label="下一首" hotkey="n" onPress={() => void press({ type: 'next' })} /> : null}
-            <Button key="panel" label="面板" hotkey="o" onPress={() => void act(h => h.openPane())} />
+            <Button
+              key="panel"
+              label="面板"
+              hotkey="o"
+              onPress={() =>
+                void $.ui.open({ id: PANE, title: 'cc-music', rows: PANE_ROWS, columns: PANE_COLUMNS }).then(opened =>
+                  opened.isPlaced ? act(afterPaneOpened) : undefined,
+                )
+              }
+            />
           </Box>
         </Box>
         {player.status === 'error' && player.error ? (

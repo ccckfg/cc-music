@@ -41,6 +41,10 @@ export type PaneModel = {
   library: LibraryResponse | null;
   lastSearch: LastSearch | null;
   search: SearchState;
+  /** 停靠在对话旁边成了侧边栏（全屏布局），这时竖着排、歌词占满剩下的高度 */
+  isDocked: boolean;
+  /** 终端的行数；侧边栏从上到下占满它 */
+  rows: number;
   /** daemon 是旧版本时它的版本号，面板提示用户 /music restart */
   outdatedDaemon: string | undefined;
 }
@@ -55,7 +59,7 @@ export type PaneActions = {
 }
 
 const TABS: { id: PaneTab; label: string; hotkey: string }[] = [
-  { id: 'now', label: '正在播放', hotkey: '1' },
+  { id: 'now', label: '当前', hotkey: '1' },
   { id: 'search', label: '搜索', hotkey: '2' },
   { id: 'queue', label: '队列', hotkey: '3' },
   { id: 'favorites', label: '收藏', hotkey: '4' },
@@ -76,14 +80,19 @@ const REPEAT_NEXT: Record<PlayerSnapshot['repeat'], { mode: PlayerSnapshot['repe
   one: { mode: 'off', label: '单曲循环' },
 }
 
-/** 歌词区显示几行，当前行上面留几行 */
+/** 横排时歌词区显示几行；竖排的侧边栏里歌词占满剩下的高度 */
 const LYRIC_ROWS = 9
+/** 侧边栏里歌词上面的部分（标签、封面、曲目信息、按钮）大约占多少行 */
+const SIDEBAR_HEADER_ROWS = 24
+/** 当前行上面留几行 */
 const LYRIC_ABOVE = 2
 const PLAIN_LYRIC_ROWS = 14
 /** 列表最多画多少行，再多就太长了 */
 const MAX_LIST = 50
-/** 面板窄于这个宽度时不画封面 */
+/** 横排时面板窄于这个宽度就不画封面 */
 const MIN_COLUMNS_FOR_COVER = 44
+/** 面板窄于这个宽度就竖着排 */
+const MIN_COLUMNS_FOR_ROW = 60
 
 export function PaneView(kit: Kit, model: PaneModel, actions: PaneActions): RenderElement {
   const { Box, Text, Button } = kit
@@ -126,76 +135,107 @@ function NowTab(kit: Kit, model: PaneModel, actions: PaneActions): RenderElement
 
   const key = trackKey(track)
   const cover = model.cover?.key === key && model.cover.cells ? model.cover : undefined
-  const showCover = Raster !== undefined && cover !== undefined && model.columns >= MIN_COLUMNS_FOR_COVER
-  const infoColumns = model.columns - (showCover && cover ? cover.columns + 2 : 0)
-  const barWidth = Math.max(8, Math.min(40, infoColumns - 14))
+  const isVertical = model.isDocked || model.columns < MIN_COLUMNS_FOR_ROW
+  const showCover = Raster !== undefined && cover !== undefined && (isVertical || model.columns >= MIN_COLUMNS_FOR_COVER)
+  const infoColumns = isVertical ? model.columns : model.columns - (showCover && cover ? cover.columns + 2 : 0)
   const isFavorite = model.library?.favorites.some(t => trackKey(t) === key) ?? false
   const word = STATUS_WORD[player.status]
   const repeat = REPEAT_NEXT[player.repeat]
   const subtitle = [track.artists.join(' / '), track.album, track.provider].filter(Boolean).join(' · ')
+  const lyricRows = model.isDocked ? Math.max(6, model.rows - SIDEBAR_HEADER_ROWS) : LYRIC_ROWS
+
+  const coverView =
+    showCover && cover?.cells ? (
+      <Box flexShrink={0} marginRight={isVertical ? 0 : 2} marginBottom={isVertical ? 1 : 0}>
+        <Raster key="cover" columns={cover.columns} rows={cover.rows} cells={cover.cells} />
+      </Box>
+    ) : null
+
+  // 竖排时进度条单独一行、占满宽度；横排时和状态、时间挤在一行
+  const progress = isVertical ? (
+    <Box flexDirection="column" marginTop={1}>
+      <Box flexDirection="row" columnGap={1}>
+        <Text color={word.color}>{word.text}</Text>
+        <Text dimColor>
+          {formatTime(player.position)} / {formatTime(player.duration)}
+        </Text>
+      </Box>
+      <Text dimColor>{progressBar(player.position, player.duration, Math.max(8, infoColumns))}</Text>
+    </Box>
+  ) : (
+    <Box flexDirection="row" columnGap={1} marginTop={1}>
+      <Text color={word.color}>{word.text}</Text>
+      <Text dimColor>
+        {formatTime(player.position)} {progressBar(player.position, player.duration, Math.max(8, Math.min(40, infoColumns - 14)))}{' '}
+        {formatTime(player.duration)}
+      </Text>
+    </Box>
+  )
+
+  const info = (
+    <Box flexDirection="column" flexShrink={1} flexGrow={1}>
+      <Text bold wrap="truncate-end">
+        {track.title}
+      </Text>
+      <Text dimColor wrap="truncate-end">
+        {subtitle}
+      </Text>
+      {progress}
+      <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
+        <Button key="prev" label="上一首" hotkey="b" onPress={() => actions.command({ type: 'prev' })} />
+        <Button
+          key="toggle"
+          label={player.status === 'paused' ? '播放' : '暂停'}
+          hotkey="p"
+          variant="primary"
+          onPress={() => actions.command({ type: 'toggle' })}
+        />
+        <Button key="next" label="下一首" hotkey="n" onPress={() => actions.command({ type: 'next' })} />
+        <Button key="favorite" label={isFavorite ? '已收藏' : '收藏'} hotkey="f" onPress={() => actions.toggleFavorite(track)} />
+      </Box>
+      <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+        <Button key="vol-down" label="音量-" onPress={() => actions.command({ type: 'volume', delta: -10 })} />
+        <Button key="vol-up" label="音量+" onPress={() => actions.command({ type: 'volume', delta: 10 })} />
+        <Button key="repeat" label={repeat.label} onPress={() => actions.command({ type: 'repeat', mode: repeat.mode })} />
+        <Text dimColor>音量 {player.volume}</Text>
+      </Box>
+    </Box>
+  )
 
   return (
     <Box flexDirection="column">
-      <Box flexDirection="row">
-        {showCover && cover?.cells ? (
-          <Box marginRight={2} flexShrink={0}>
-            <Raster key="cover" columns={cover.columns} rows={cover.rows} cells={cover.cells} />
-          </Box>
-        ) : null}
-        <Box flexDirection="column" flexShrink={1} flexGrow={1}>
-          <Text bold wrap="truncate-end">
-            {track.title}
-          </Text>
-          <Text dimColor wrap="truncate-end">
-            {subtitle}
-          </Text>
-          <Box flexDirection="row" columnGap={1} marginTop={1}>
-            <Text color={word.color}>{word.text}</Text>
-            <Text dimColor>
-              {formatTime(player.position)} {progressBar(player.position, player.duration, barWidth)} {formatTime(player.duration)}
-            </Text>
-          </Box>
-          <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
-            <Button key="prev" label="上一首" hotkey="b" onPress={() => actions.command({ type: 'prev' })} />
-            <Button
-              key="toggle"
-              label={player.status === 'paused' ? '播放' : '暂停'}
-              hotkey="p"
-              variant="primary"
-              onPress={() => actions.command({ type: 'toggle' })}
-            />
-            <Button key="next" label="下一首" hotkey="n" onPress={() => actions.command({ type: 'next' })} />
-            <Button key="favorite" label={isFavorite ? '已收藏' : '收藏'} hotkey="f" onPress={() => actions.toggleFavorite(track)} />
-          </Box>
-          <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
-            <Button key="vol-down" label="音量-" onPress={() => actions.command({ type: 'volume', delta: -10 })} />
-            <Button key="vol-up" label="音量+" onPress={() => actions.command({ type: 'volume', delta: 10 })} />
-            <Button key="repeat" label={repeat.label} onPress={() => actions.command({ type: 'repeat', mode: repeat.mode })} />
-            <Text dimColor>音量 {player.volume}</Text>
-          </Box>
+      {isVertical ? (
+        <Box flexDirection="column">
+          {coverView}
+          {info}
         </Box>
-      </Box>
+      ) : (
+        <Box flexDirection="row">
+          {coverView}
+          {info}
+        </Box>
+      )}
       {player.status === 'error' && player.error ? (
         <Text color="red" wrap="wrap">
           {player.error}
         </Text>
       ) : null}
       <Box flexDirection="column" marginTop={1}>
-        {LyricsView(kit, model.lyrics, track, player.position)}
+        {LyricsView(kit, model.lyrics, track, player.position, lyricRows)}
       </Box>
     </Box>
   )
 }
 
-function LyricsView(kit: Kit, lyrics: LyricsState | null, track: Track, position: number): RenderElement {
+function LyricsView(kit: Kit, lyrics: LyricsState | null, track: Track, position: number, rows: number): RenderElement {
   const { Box, Text } = kit
   if (!lyrics || lyrics.key !== trackKey(track)) return <Text dimColor>正在查找歌词…</Text>
   if (lyrics.error) return <Text dimColor>查找歌词失败：{lyrics.error}</Text>
 
   if (lyrics.synced) {
     const current = currentLyricIndex(lyrics.synced, position)
-    const start = Math.max(0, Math.min(current - LYRIC_ABOVE, lyrics.synced.length - LYRIC_ROWS))
-    const shown = lyrics.synced.slice(start, start + LYRIC_ROWS)
+    const start = Math.max(0, Math.min(current - LYRIC_ABOVE, lyrics.synced.length - rows))
+    const shown = lyrics.synced.slice(start, start + rows)
     return (
       <Box flexDirection="column">
         {shown.map((line, i) =>
@@ -218,7 +258,7 @@ function LyricsView(kit: Kit, lyrics: LyricsState | null, track: Track, position
     return (
       <Box flexDirection="column">
         <Text dimColor>（这首只有不带时间轴的歌词）</Text>
-        {lines.slice(0, PLAIN_LYRIC_ROWS).map(line => (
+        {lines.slice(0, Math.max(PLAIN_LYRIC_ROWS, rows)).map(line => (
           <Text wrap="truncate-end">{line}</Text>
         ))}
       </Box>

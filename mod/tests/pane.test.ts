@@ -1,14 +1,50 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { fakeDaemon, music, PANE, RICE, SESSION, SUNNY } from './fake-daemon.ts'
+import { fakeDaemon, FULLSCREEN, music, PANE, RICE, SESSION, SUNNY } from './fake-daemon.ts'
+
+describe('侧边栏', () => {
+  test('全屏布局下 /music 停靠成侧边栏；搜歌播放也会打开它，主屏幕布局下不会', async ($, on) => {
+    const fake = fakeDaemon(on)
+    await $.session.start(SESSION)
+
+    await $.command.run(music('晴天'))
+    expect(fake.opened).toEqual([])
+
+    await $.command.run(music('晴天', FULLSCREEN))
+    expect(fake.opened.map(o => o.id)).toEqual(['cc-music'])
+    await $.command.run(music('next', FULLSCREEN))
+    expect(fake.opened).toHaveLength(1)
+
+    expect((await $.command.run(music('', FULLSCREEN))).text).toContain('已在右侧打开 cc-music 侧边栏')
+    expect((await $.command.run(music('', { isFullscreen: true, columns: 100 }))).text).toContain('拉宽到 110 列以上')
+  })
+
+  test('侧边栏竖着排：封面在上、进度条单独一行、歌词占满剩下的高度', async ($, on) => {
+    const fake = fakeDaemon(on)
+    await $.session.start(SESSION)
+    await $.command.run(music('晴天', FULLSCREEN))
+    await fake.clock.advance(1000)
+
+    const pane = await $.ui.mount({
+      ...PANE,
+      surface: 'terminal',
+      props: { ...PANE.props, bodyColumns: 46, placement: 'dock' },
+      viewport: { columns: 160, rows: 40, isFullscreen: true },
+    })
+    expect(await pane.find({ type: 'Raster' })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: '0:12 / 4:30' })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: '从出生那年就飘着' })).toBeDefined()
+    await pane.unmount()
+  })
+})
 
 describe('cc-music 面板', () => {
   test('/music 打开面板；正在播放页有曲目、当前歌词行，终端上还有封面', async ($, on) => {
     const fake = fakeDaemon(on)
     await $.session.start(SESSION)
 
-    expect((await $.command.run(music(''))).text).toContain('已打开 cc-music 面板')
-    expect(fake.opened).toEqual(['cc-music'])
+    expect((await $.command.run(music(''))).text).toContain('已在输入框上方打开面板')
+    expect(fake.opened).toEqual([{ id: 'cc-music', columns: 48 }])
 
     // 假 daemon 播到第 12 秒；轮询一次去取歌词和封面
     await $.command.run(music('晴天'))

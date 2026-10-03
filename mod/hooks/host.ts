@@ -28,8 +28,6 @@ export type Host = {
   launcher: () => Promise<{ node: string; script: string }>;
   /** `$.clock.sleep` */
   sleep: (ms: number) => Promise<void>;
-  /** 打开（或切到）cc-music 面板；返回是否已摆上屏幕 */
-  openPane: () => Promise<boolean>;
   getPlayer: () => Promise<PlayerSnapshot | null>;
   setPlayer: (player: PlayerSnapshot | null) => Promise<void>;
   getLastSearch: () => Promise<LastSearch | null>;
