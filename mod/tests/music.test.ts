@@ -27,7 +27,7 @@ describe('/music 命令', () => {
   })
 
   test('控制命令和参数校验', async ($, on) => {
-    const { commands } = fakeDaemon(on)
+    const { commands, searches } = fakeDaemon(on)
     await $.session.start(SESSION)
 
     expect((await $.command.run(music('vol +10'))).text).toBe('音量 70')
@@ -39,6 +39,10 @@ describe('/music 命令', () => {
       { type: 'repeat', mode: 'one' },
     ])
     expect((await $.command.run(music('vol 很大'))).text).toContain('音量写成')
+    // 打错命令（差一个字母、或两个字母对调）给提示，不拿去搜歌
+    expect((await $.command.run(music('resyart'))).text).toContain('/music restart')
+    expect((await $.command.run(music('puase'))).text).toContain('/music pause')
+    expect(searches).toEqual([])
     expect((await $.command.run(music('3'))).text).toContain('还没有搜索过')
   })
 })

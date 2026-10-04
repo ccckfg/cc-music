@@ -4,7 +4,7 @@
 
 - `/music 晴天` 搜索并播放，`/music next`、`/music vol 40` 等控制
 - 输入框上方的迷你播放器：曲名、进度、上一首 / 暂停 / 下一首 / 面板按钮
-- `/music` 打开面板：封面字符画、滚动歌词、搜索、队列、收藏、播放历史和设置；全屏布局下停靠在右侧成侧边栏
+- `/music` 打开面板：封面字符画、跳动的频谱、Claude Code 思考时那样的转圈和流光、卡拉 OK 式逐字染色的歌词、搜索、队列、收藏、播放历史和设置；全屏布局下停靠在右侧成侧边栏
 - 直接对 Claude 说“放点周杰伦”，它会调用 `music` 工具帮你点歌
 - 音源可插拔：目前有哔哩哔哩（默认，国内直连）和 YouTube Music
 
@@ -139,6 +139,8 @@ npm run daemon     # 前台运行 daemon（调试用）
 - mod 的约束：`$` 只能在 hook 里直接调用，不能传给其他函数，所以 `register.tsx` 在 `session.start` 里把能力包成 `Host`（见 `hooks/host.ts`）；`$.state` 的 atom 必须声明在使用它的文件里
 - 面板必须由命令或按钮 hook 自己的 `$` 调 `$.ui.open`，引擎才认作“用户要求的”、任何宽度都摆出来；用 `session.start` 里存下的 `$` 打开会被当成插件自己弹的，要 144 列才显示
 - 面板的画法在 `hooks/view.tsx`（纯函数，不碰 `$`），状态和动作在 `register.tsx`
+- 动效在 `hooks/fx/`：进度条、频谱、卡拉 OK 歌词、标签下划线、均衡器图标都是 `Client` 的 surface module，在绘制线程上按自己的帧时钟（`surface.every`）重画那一小块，不用整个面板重画；播放位置在两次轮询之间按帧往前推。测试里用 `ui.advance(ms)` 走时钟、`find({ in: key })` 查它画的东西。空状态的像素图标在 `hooks/icons.ts`
+- 侧边栏常常只有二十几列：每一行先算好宽度、截好文字，不靠 flex 收缩；图标只用 Cascadia Mono 里有的字形（`❚ ♡ ✗` 没有，会落到别的字体上）
 - 封面：daemon 交出保持原比例、长边 256 的 RGB 像素，`hooks/cover.ts` 按格子裁切缩放，每格在块元素（U+2580–259F：象限和 1/8 横竖条）里挑误差最小的字符和两种颜色。Raster 只收 BMP 字符，Unicode 16 的八分块（U+1CD00）用不了；一个 Raster 最多 1024 种前景/背景组合，所以封面限制在 40×20 格以内
 - 开发时用 `claude --plugin-dir mod` 直接加载项目里的 mod，改了就热重载。不要用目录 junction 把 mod 链进会话的 mods 目录：Windows 上热重载监视不到 junction 背后的改动，会话会一直跑旧代码
 - mod 不在仓库里时（例如被拷到别处），靠 `~/.cc-music/install.json`（daemon 每次启动时写）找到 `daemon/src/launch.ts`；也可以用环境变量 `CC_MUSIC_DAEMON` 指定

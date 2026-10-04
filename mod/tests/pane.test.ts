@@ -33,9 +33,10 @@ describe('侧边栏', () => {
       viewport: { columns: 160, rows: 40, isFullscreen: true },
     })
     expect(await pane.find({ type: 'Raster' })).toBeDefined()
-    expect(await pane.find({ type: 'Text', text: '0:12' })).toBeDefined()
-    expect(await pane.find({ type: 'Text', text: '4:30' })).toBeDefined()
-    expect(await pane.find({ type: 'Text', text: '从出生那年就飘着' })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: '0:12', in: 'progress' })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: '4:30', in: 'progress' })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: '从出生那年就飘着', in: 'lyrics' })).toBeDefined()
+    expect(await pane.find({ in: 'viz' })).toBeDefined()
     await pane.unmount()
   })
 })
@@ -55,8 +56,10 @@ describe('cc-music 面板', () => {
     for (const surface of ['terminal', 'desktop'] as const) {
       const pane = await $.ui.mount({ ...PANE, surface })
       expect(await pane.find({ type: 'Text', text: '晴天' })).toBeDefined()
-      expect((await pane.find({ type: 'Text', text: '故事的小黄花' }))?.props['bold']).toBe(true)
-      expect((await pane.find({ type: 'Text', text: '从出生那年就飘着' }))?.props['bold']).toBeUndefined()
+      // 卡拉 OK：第 12 秒，“故事的小黄花”（10–20 秒）唱了两成，第一个字已经染成橙色
+      expect(await pane.find({ text: '故事的小黄花', in: 'lyrics' })).toBeDefined()
+      expect((await pane.find({ type: 'Text', text: '故', in: 'lyrics' }))?.props['color']).toBe('claude')
+      expect((await pane.find({ type: 'Text', text: '从出生那年就飘着', in: 'lyrics' }))?.props['bold']).toBeUndefined()
       const raster = await pane.find({ type: 'Raster' })
       if (surface === 'terminal') expect(Number(raster?.props['columns'])).toBeGreaterThanOrEqual(12)
       else expect(raster).toBeUndefined()

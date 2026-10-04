@@ -6,6 +6,7 @@
 import type {
   BoxProps,
   ButtonProps,
+  ClientProps,
   ElementConstructor,
   InputProps,
   RasterProps,
@@ -30,15 +31,26 @@ import type {
 } from '../types'
 import { coverCells } from './cover.ts'
 import { currentLyricIndex, formatTime, timeAgo, titleParts, trackKey } from './format.ts'
+import type { EqProps } from './fx/eq.tsx'
+import type { LyricsProps } from './fx/lyrics.tsx'
+import type { ProgressProps } from './fx/progress.tsx'
+import type { TablineProps } from './fx/tabline.tsx'
+import type { VizProps } from './fx/viz.tsx'
+import { icon, type IconName } from './icons.ts'
 import { C, cellWidth, truncate, wrapText } from './theme.ts'
 
-/** 画面板用到的元素；Input、Raster 不是每个界面都有。 */
+/**
+ * 画面板用到的元素；Input、Raster、Client 不是每个界面都有。
+ * Client 是动效：进度条、频谱、卡拉 OK 歌词、标签下划线、均衡器图标都是 fx/ 下的 surface module，
+ * 在绘制线程上按自己的帧时钟重画，不用整个面板重画。没有 Client 的界面画静态版本。
+ */
 export type Kit = {
   Box: ElementConstructor<BoxProps>;
   Text: ElementConstructor<TextProps>;
   Button: ElementConstructor<ButtonProps>;
   Input?: ElementConstructor<InputProps>;
   Raster?: ElementConstructor<RasterProps>;
+  Client?: ElementConstructor<ClientProps>;
 }
 
 export type PaneModel = {
@@ -175,6 +187,14 @@ function TabBar(kit: Kit, active: PaneTab, width: number, actions: PaneActions):
   const labels = TABS.reduce((sum, tab) => sum + cellWidth(tab.label), 0)
   const gap = labels + TAB_GAP * (TABS.length - 1) <= width ? TAB_GAP : 1
   const used = labels + gap * (TABS.length - 1)
+  const { Client } = kit
+  const segments: [number, number][] = []
+  let x = 0
+  for (const tab of TABS) {
+    segments.push([x, cellWidth(tab.label)])
+    x += cellWidth(tab.label) + gap
+  }
+  const line: TablineProps = { segments, active: TABS.findIndex(tab => tab.id === active), width }
   return (
     <Box flexDirection="column" marginTop={1} width={width}>
       <Box flexDirection="row" columnGap={gap}>
@@ -182,6 +202,9 @@ function TabBar(kit: Kit, active: PaneTab, width: number, actions: PaneActions):
           <Button key={`tab-${tab.id}`} label={tab.label} plain dimColor={tab.id !== active} onPress={() => actions.setTab(tab.id)} />
         ))}
       </Box>
+      {Client ? (
+        <Client key="tabline" module="./fx/tabline.tsx" props={line} width={width} height={1} />
+      ) : (
       <Box flexDirection="row">
         {TABS.map((tab, i) => (
           <Box flexDirection="row">
@@ -191,6 +214,7 @@ function TabBar(kit: Kit, active: PaneTab, width: number, actions: PaneActions):
         ))}
         <Text color={C.faint}>{'─'.repeat(Math.max(0, width - used))}</Text>
       </Box>
+      )}
     </Box>
   )
 }
@@ -200,14 +224,15 @@ function NowTab(kit: Kit, model: PaneModel, width: number, actions: PaneActions)
   const player = model.player
   const track = player?.current
   if (!player || !track) {
-    return Empty(kit, '还没有在播放', ['到「搜索」找一首', '或输入 /music 歌名'])
+    return Empty(kit, '还没有在播放', ['到「搜索」找一首', '或输入 /music 歌名'], 'vinyl')
   }
 
   if (model.isDocked || width < MIN_COLUMNS_FOR_ROW) {
-    // 竖着排：封面 → 歌名 → 进度 → 控制 → 歌词。封面尽量大，但给歌词留够行数
+    // 竖着排：封面 → 歌名 → 频谱 → 进度 → 控制 → 歌词。封面尽量大，但给歌词留够行数
     const info = trackInfo(track, width - 2)
     const errorRows = player.status === 'error' && player.error ? 1 + wrapText(player.error, width).length : 0
-    const fixedRows = NOW_CHROME_ROWS + info.titleLines.length + (info.detail ? 1 : 0) + errorRows
+    const vizRows = kit.Client ? (model.rows >= 44 ? 2 : 1) : 0
+    const fixedRows = NOW_CHROME_ROWS + (vizRows ? vizRows + 1 : 0) + info.titleLines.length + (info.detail ? 1 : 0) + errorRows
     const coverRows = model.rows - fixedRows - MIN_LYRIC_ROWS - 1
     const coverColumns = even(clamp(Math.min(width, coverRows * 2), COVER_MIN, COVER_MAX))
     const cover = model.prefs.showCover ? CoverArt(kit, model.cover, track, coverColumns) : null
@@ -221,11 +246,12 @@ function NowTab(kit: Kit, model: PaneModel, width: number, actions: PaneActions)
           </Box>
         ) : null}
         {TitleBlock(kit, track, info, width, model.library, actions)}
-        <Box marginTop={1}>{Progress(kit, player, width)}</Box>
+        {vizRows ? <Box marginTop={1}>{Visualizer(kit, player, track, width, vizRows)}</Box> : null}
+        <Box marginTop={vizRows ? 0 : 1}>{Progress(kit, player, width)}</Box>
         <Box marginTop={1}>{Transport(kit, player, width, 'center', actions)}</Box>
         <Box marginTop={1}>{Secondary(kit, player, width, actions)}</Box>
         {ErrorLine(kit, player, width)}
-        {Lyrics(kit, model.lyrics, track, player.position, width, lyricRows)}
+        {Lyrics(kit, model.lyrics, player, track, width, lyricRows)}
       </Box>
     )
   }
@@ -240,13 +266,14 @@ function NowTab(kit: Kit, model: PaneModel, width: number, actions: PaneActions)
         {cover}
         <Box flexDirection="column" width={infoWidth}>
           {TitleBlock(kit, track, info, infoWidth, model.library, actions)}
-          <Box marginTop={1}>{Progress(kit, player, infoWidth)}</Box>
+          {kit.Client ? <Box marginTop={1}>{Visualizer(kit, player, track, infoWidth, 1)}</Box> : null}
+          <Box marginTop={kit.Client ? 0 : 1}>{Progress(kit, player, infoWidth)}</Box>
           <Box marginTop={1}>{Transport(kit, player, infoWidth, 'flex-start', actions)}</Box>
           <Box marginTop={1}>{Secondary(kit, player, infoWidth, actions)}</Box>
           {ErrorLine(kit, player, infoWidth)}
         </Box>
       </Box>
-      {Lyrics(kit, model.lyrics, track, player.position, width, INLINE_LYRIC_ROWS)}
+      {Lyrics(kit, model.lyrics, player, track, width, INLINE_LYRIC_ROWS)}
     </Box>
   )
 }
@@ -304,9 +331,16 @@ function TitleBlock(kit: Kit, track: Track, info: TrackInfo, width: number, libr
   )
 }
 
-/** 进度：整行的进度条，下面一行左右两头是时间。 */
+/**
+ * 进度：整行的进度条，下面一行左右两头是时间。有 Client 时是动的：
+ * 两次轮询之间按帧往前走、已播部分有流光，中间是 Claude Code 思考时那样的转圈 + 状态字。
+ */
 function Progress(kit: Kit, player: PlayerSnapshot, width: number): RenderElement {
-  const { Box, Text } = kit
+  const { Box, Text, Client } = kit
+  if (Client) {
+    const props: ProgressProps = { position: player.position, duration: player.duration, status: player.status, width }
+    return <Client key="progress" module="./fx/progress.tsx" props={props} width={width} height={2} />
+  }
   const ratio = player.duration && player.duration > 0 ? Math.min(1, Math.max(0, player.position / player.duration)) : 0
   const filled = Math.min(width - 1, Math.round(ratio * (width - 1)))
   return (
@@ -378,9 +412,21 @@ function ErrorLine(kit: Kit, player: PlayerSnapshot, width: number): RenderEleme
   )
 }
 
-/** 歌词：每句按宽度折行后居中；当前句 Claude 橙加粗，越远越淡。 */
-function Lyrics(kit: Kit, lyrics: LyricsState | null, track: Track, position: number, width: number, rows: number): RenderElement {
-  const { Box, Text } = kit
+/** 频谱：一排随节拍跳动的柱子（只在有 Client 的界面上画）。 */
+function Visualizer(kit: Kit, player: PlayerSnapshot, track: Track, width: number, rows: number): RenderElement | null {
+  const { Client } = kit
+  if (!Client) return null
+  const props: VizProps = { status: player.status, width, rows, seed: trackKey(track) }
+  return <Client key="viz" module="./fx/viz.tsx" props={props} width={width} height={rows} />
+}
+
+/**
+ * 歌词：每句按宽度折行后居中，越远越淡。有 Client 时是卡拉 OK：正在唱的那句从左往右染成 Claude 橙；
+ * 没有 Client 时整句橙色加粗。
+ */
+function Lyrics(kit: Kit, lyrics: LyricsState | null, player: PlayerSnapshot, track: Track, width: number, rows: number): RenderElement {
+  const { Box, Text, Client } = kit
+  const position = player.position
   const note = (text: string) => (
     <Box flexDirection="column" alignItems="center" marginTop={1} width={width}>
       <Text color={C.faint}>{text}</Text>
@@ -390,6 +436,22 @@ function Lyrics(kit: Kit, lyrics: LyricsState | null, track: Track, position: nu
   if (lyrics.error) return note('查找歌词失败')
 
   const lineWidth = Math.max(10, width - 2)
+  if (lyrics.synced && Client) {
+    const props: LyricsProps = {
+      rows: lyrics.synced.flatMap((line, i) => wrapText(line.text, lineWidth).map(text => ({ text, line: i }))),
+      times: lyrics.synced.map(line => line.time),
+      position,
+      duration: player.duration,
+      status: player.status,
+      width,
+      height: rows,
+    }
+    return (
+      <Box marginTop={1} width={width}>
+        <Client key="lyrics" module="./fx/lyrics.tsx" props={props} width={width} height={rows} />
+      </Box>
+    )
+  }
   if (lyrics.synced) {
     const lines = lyrics.synced
     const current = currentLyricIndex(lines, position)
@@ -449,7 +511,7 @@ type ItemButton = { id: string; label: string; onPress: () => void }
  * 列表里的一首歌，两行，各段宽度先算好：
  *   1  歌名（点它就播放）          3:34
  *      UP 主 · 标题里的修饰         +  ×
- * 当前播放的那首，序号换成橙色的 ♪。
+ * 当前播放的那首，序号换成跳动的均衡器（没有 Client 时是橙色的 ♪）。
  */
 function TrackItem(
   kit: Kit,
@@ -460,9 +522,11 @@ function TrackItem(
   width: number,
   buttons: ItemButton[],
   note: string,
-  isCurrent = false,
+  /** 这首是当前曲目时传播放状态 */
+  current?: PlayerSnapshot['status'],
 ): RenderElement {
-  const { Box, Text, Button } = kit
+  const { Box, Text, Button, Client } = kit
+  const isCurrent = current !== undefined
   const indexWidth = 3
   const noteWidth = cellWidth(note)
   const titleWidth = Math.max(4, width - indexWidth - noteWidth - 1)
@@ -474,9 +538,13 @@ function TrackItem(
     <Box key={rowKey} flexDirection="column" width={width}>
       <Box flexDirection="row" width={width}>
         <Box width={indexWidth} flexShrink={0}>
-          <Text color={isCurrent ? C.accent : C.faint} bold={isCurrent ? true : undefined}>
-            {isCurrent ? '♪' : String(index + 1)}
-          </Text>
+          {current && Client ? (
+            <Client key={`${rowKey}-eq`} module="./fx/eq.tsx" props={{ status: current, bars: 2 } satisfies EqProps} width={2} height={1} />
+          ) : (
+            <Text color={isCurrent ? C.accent : C.faint} bold={isCurrent ? true : undefined}>
+              {isCurrent ? '♪' : String(index + 1)}
+            </Text>
+          )}
         </Box>
         <Box width={titleWidth} flexShrink={0}>
           <Button key={`${rowKey}-${primary.id}`} label={truncate(parts.title, titleWidth)} plain onPress={primary.onPress} />
@@ -518,12 +586,22 @@ function ListHeader(kit: Kit, title: string, count: string, width: number, butto
   )
 }
 
-/** 空状态：橙色的 ♪、一句说明，下面几行提示（每行都短，窄侧边栏里不会断得难看） */
-function Empty(kit: Kit, title: string, hints: string[] = []): RenderElement {
-  const { Box, Text } = kit
+/**
+ * 空状态：一个像素画的图标（终端上；别处是橙色的 ♪）、一句说明，
+ * 下面几行提示（每行都短，窄侧边栏里不会断得难看）。
+ */
+function Empty(kit: Kit, title: string, hints: string[] = [], picture?: IconName): RenderElement {
+  const { Box, Text, Raster } = kit
+  const art = picture && Raster ? icon(picture) : undefined
   return (
     <Box flexDirection="column" alignItems="center" marginTop={2}>
-      <Text color={C.accent}>♪</Text>
+      {art && Raster ? (
+        <Box marginBottom={1}>
+          <Raster key={`icon-${picture}`} columns={art.columns} rows={art.rows} cells={art.cells} />
+        </Box>
+      ) : (
+        <Text color={C.accent}>♪</Text>
+      )}
       <Text color={C.dim}>{title}</Text>
       {hints.map(hint => (
         <Text color={C.faint}>{hint}</Text>
@@ -581,7 +659,7 @@ function SearchTab(kit: Kit, model: PaneModel, width: number, actions: PaneActio
 
 function QueueTab(kit: Kit, model: PaneModel, width: number, actions: PaneActions): RenderElement {
   const player = model.player
-  if (!player || player.queue.length === 0) return Empty(kit, '队列是空的', ['在「搜索」里点 + 加入'])
+  if (!player || player.queue.length === 0) return Empty(kit, '队列是空的', ['在「搜索」里点 + 加入'], 'list')
   const { Box } = kit
   const repeat = REPEAT[player.repeat]
   return (
@@ -600,7 +678,7 @@ function QueueTab(kit: Kit, model: PaneModel, width: number, actions: PaneAction
           width,
           [{ id: 'remove', label: '×', onPress: () => actions.command({ type: 'remove', index: i }) }],
           formatTime(track.durationSec),
-          i === player.index,
+          i === player.index ? player.status : undefined,
         ),
       )}
     </Box>
@@ -610,7 +688,7 @@ function QueueTab(kit: Kit, model: PaneModel, width: number, actions: PaneAction
 function FavoritesTab(kit: Kit, model: PaneModel, width: number, actions: PaneActions): RenderElement {
   if (!model.library) return Empty(kit, '正在读取收藏…')
   const { favorites } = model.library
-  if (favorites.length === 0) return Empty(kit, '还没有收藏', ['播放时点 ♥', '或输入 /music fav'])
+  if (favorites.length === 0) return Empty(kit, '还没有收藏', ['播放时点 ♥', '或输入 /music fav'], 'heart')
   const { Box } = kit
   return (
     <Box flexDirection="column" width={width}>
@@ -637,7 +715,7 @@ function FavoritesTab(kit: Kit, model: PaneModel, width: number, actions: PaneAc
 function HistoryTab(kit: Kit, model: PaneModel, width: number, actions: PaneActions): RenderElement {
   if (!model.library) return Empty(kit, '正在读取播放历史…')
   const { history } = model.library
-  if (history.length === 0) return Empty(kit, '还没有播放历史', ['放过的歌会出现在这里'])
+  if (history.length === 0) return Empty(kit, '还没有播放历史', ['放过的歌会出现在这里'], 'clock')
   const { Box } = kit
   return (
     <Box flexDirection="column" width={width}>
@@ -658,24 +736,25 @@ function HistoryTab(kit: Kit, model: PaneModel, width: number, actions: PaneActi
   )
 }
 
-/** 设置页的一个控件和它的宽度：放得下时和名字排在一行 */
-type Control = { element: RenderElement; width: number }
+/**
+ * 设置页的一个控件：一行时的样子和宽度；太宽放不下时 stacked 是竖着排的样子。
+ */
+type Control = { element: RenderElement; width: number; stacked?: RenderElement }
 
 type Choice<T> = { value: T; label: string }
 
-const ON_OFF: Choice<boolean>[] = [
-  { value: true, label: '开' },
-  { value: false, label: '关' },
-]
-
 const PROVIDER_CHOICES: Choice<string>[] = Object.entries(PROVIDER_NAME).map(([value, label]) => ({ value, label }))
 
-/** 空闲自动退出的选项（分钟，0 是不退出） */
+/** 空闲自动退出的选项（分钟，0 是不退出），‹ › 在里面轮换 */
 const IDLE_CHOICES = [10, 30, 60, 0]
+
+/** 每组设置标题前的图标（都在 Cascadia Mono 里） */
+const SECTION_ICON = { play: '♫', look: '◐', youtube: '▶', daemon: '◎' } as const
 
 /**
  * 设置页。「播放」「YouTube Music」「后台播放器」改的是 daemon 的 config.json，
- * 「界面」是面板自己的偏好，存在 $.store 里。一项放不下一行时，名字一行、选项一行。
+ * 「界面」是面板自己的偏好，存在 $.store 里。
+ * 开关画成 ━━● 开 / ●── 关，单选画成 ● ○，数值用 ‹ › 或 − + 调；一项放不下一行时名字一行、控件一行。
  */
 function SettingsTab(kit: Kit, model: PaneModel, width: number, actions: PaneActions): RenderElement {
   const { Box, Text, Button } = kit
@@ -695,30 +774,28 @@ function SettingsTab(kit: Kit, model: PaneModel, width: number, actions: PaneAct
       {config && state?.error ? (
         <Box marginBottom={1} width={width}>
           <Text color={C.error} wrap="wrap">
-            {state.error}
+            × {state.error}
           </Text>
         </Box>
       ) : null}
-      {Section(kit, '播放', width, [
+      {Section(kit, SECTION_ICON.play, '播放', width, [
         daemonNote,
         config
-          ? Setting(kit, width, '默认音源', ChoiceRow(kit, 'provider', PROVIDER_CHOICES, config.settings.defaultProvider, value => actions.changeSettings({ defaultProvider: value })))
+          ? Setting(kit, width, '默认音源', Radio(kit, 'provider', PROVIDER_CHOICES, config.settings.defaultProvider, value => actions.changeSettings({ defaultProvider: value })))
           : null,
         config ? Setting(kit, width, '启动音量', VolumeStepper(kit, config.settings.volume, actions)) : null,
       ])}
-      {Section(kit, '界面', width, [
-        Setting(kit, width, '迷你播放器', ChoiceRow(kit, 'mini-player', ON_OFF, prefs.showMiniPlayer, value => actions.changePrefs({ showMiniPlayer: value }))),
-        Setting(kit, width, '放歌时打开侧边栏', ChoiceRow(kit, 'auto-sidebar', ON_OFF, prefs.autoOpenSidebar, value => actions.changePrefs({ autoOpenSidebar: value }))),
-        Setting(kit, width, '封面', ChoiceRow(kit, 'cover', ON_OFF, prefs.showCover, value => actions.changePrefs({ showCover: value }))),
+      {Section(kit, SECTION_ICON.look, '界面', width, [
+        Setting(kit, width, '迷你播放器', Switch(kit, 'mini-player', prefs.showMiniPlayer, value => actions.changePrefs({ showMiniPlayer: value }))),
+        Setting(kit, width, '放歌时打开侧边栏', Switch(kit, 'auto-sidebar', prefs.autoOpenSidebar, value => actions.changePrefs({ autoOpenSidebar: value }))),
+        Setting(kit, width, '封面', Switch(kit, 'cover', prefs.showCover, value => actions.changePrefs({ showCover: value }))),
       ])}
-      {config ? Section(kit, 'YouTube Music', width, [Cookies(kit, config, width, actions)]) : null}
-      {Section(kit, '后台播放器', width, [
-        config
-          ? Setting(kit, width, '空闲自动退出', ChoiceRow(kit, 'idle', idleChoices(config.settings.idleExitMinutes), config.settings.idleExitMinutes, value => actions.changeSettings({ idleExitMinutes: value })))
-          : null,
+      {config ? Section(kit, SECTION_ICON.youtube, 'YouTube Music', width, [Cookies(kit, config, width, actions)]) : null}
+      {Section(kit, SECTION_ICON.daemon, '后台播放器', width, [
+        config ? Setting(kit, width, '空闲自动退出', IdleStepper(kit, config.settings.idleExitMinutes, actions)) : null,
         config ? Tools(kit, config, width) : null,
         <Box marginTop={1}>
-          <Button key="restart-daemon" label="重启后台播放器" plain onPress={actions.restartDaemon} />
+          <Button key="restart-daemon" label="▸ 重启后台播放器" plain onPress={actions.restartDaemon} />
         </Box>,
         config ? <Text color={C.faint}>{truncateMiddle(config.configFile, width)}</Text> : null,
       ])}
@@ -726,14 +803,15 @@ function SettingsTab(kit: Kit, model: PaneModel, width: number, actions: PaneAct
   )
 }
 
-/** 一组设置：粗体的组名，后面一条细线拉到行尾 */
-function Section(kit: Kit, title: string, width: number, children: (RenderElement | null)[]): RenderElement {
+/** 一组设置：橙色图标、粗体组名，后面一条细线拉到行尾 */
+function Section(kit: Kit, glyph: string, title: string, width: number, children: (RenderElement | null)[]): RenderElement {
   const { Box, Text } = kit
   return (
     <Box flexDirection="column" marginBottom={1} width={width}>
       <Box flexDirection="row">
+        <Text color={C.accent}>{glyph} </Text>
         <Text bold>{title}</Text>
-        <Text color={C.faint}> {'─'.repeat(Math.max(0, width - cellWidth(title) - 1))}</Text>
+        <Text color={C.faint}> {'─'.repeat(Math.max(0, width - cellWidth(title) - 3))}</Text>
       </Box>
       {children}
     </Box>
@@ -753,32 +831,56 @@ function Setting(kit: Kit, width: number, label: string, control: Control): Rend
   return (
     <Box flexDirection="column" width={width}>
       <Text color={C.dim}>{label}</Text>
-      <Box flexDirection="row" justifyContent="flex-end" width={width}>
-        {control.element}
-      </Box>
+      {control.width + 2 <= width || !control.stacked ? (
+        <Box flexDirection="row" justifyContent="flex-end" width={width}>
+          {control.element}
+        </Box>
+      ) : (
+        <Box paddingLeft={2}>{control.stacked}</Box>
+      )}
     </Box>
   )
 }
 
-/** 一组选项：选中的那个是 Claude 橙的字，其余是淡色按钮（和标签行一样）。按钮的 key 是 `<key>-<值>` */
-function ChoiceRow<T>(kit: Kit, key: string, choices: Choice<T>[], current: T, onChange: (value: T) => void): Control {
+/**
+ * 开关：开着是亮的 ━━● 和橙色的“开”，关着是淡的 ●── 和“关”。按 ━━● 那一段切换；
+ * 按钮的 key 是 `<key>-<按下后的值>`。
+ */
+function Switch(kit: Kit, key: string, isOn: boolean, onChange: (value: boolean) => void): Control {
   const { Box, Text, Button } = kit
-  const gap = 2
   return {
-    width: choices.reduce((sum, choice) => sum + cellWidth(choice.label), 0) + gap * (choices.length - 1),
+    width: 6,
     element: (
-      <Box flexDirection="row" columnGap={gap}>
-        {choices.map(choice =>
-          choice.value === current ? (
-            <Text color={C.accent} bold>
-              {choice.label}
-            </Text>
-          ) : (
-            <Button key={`${key}-${String(choice.value)}`} label={choice.label} plain dimColor onPress={() => onChange(choice.value)} />
-          ),
-        )}
+      <Box flexDirection="row" columnGap={1}>
+        <Button key={`${key}-${String(!isOn)}`} label={isOn ? '━━●' : '●──'} plain dimColor={!isOn} onPress={() => onChange(!isOn)} />
+        <Text color={isOn ? C.accent : C.faint} bold={isOn ? true : undefined}>
+          {isOn ? '开' : '关'}
+        </Text>
       </Box>
     ),
+  }
+}
+
+/** 单选：选中的是橙色的 ● 和名字，其余是淡色的 ○ 按钮（key 是 `<key>-<值>`）；太宽时一项一行 */
+function Radio<T>(kit: Kit, key: string, choices: Choice<T>[], current: T, onChange: (value: T) => void): Control {
+  const { Box, Text, Button } = kit
+  const gap = 2
+  const item = (choice: Choice<T>) =>
+    choice.value === current ? (
+      <Text color={C.accent} bold>
+        ● {choice.label}
+      </Text>
+    ) : (
+      <Button key={`${key}-${String(choice.value)}`} label={`○ ${choice.label}`} plain dimColor onPress={() => onChange(choice.value)} />
+    )
+  return {
+    width: choices.reduce((sum, choice) => sum + 2 + cellWidth(choice.label), 0) + gap * (choices.length - 1),
+    element: (
+      <Box flexDirection="row" columnGap={gap}>
+        {choices.map(item)}
+      </Box>
+    ),
+    stacked: <Box flexDirection="column">{choices.map(item)}</Box>,
   }
 }
 
@@ -789,17 +891,36 @@ function VolumeStepper(kit: Kit, volume: number, actions: PaneActions): Control 
     element: (
       <Box flexDirection="row" columnGap={1}>
         <Button key="startup-vol-down" label="−" plain onPress={() => actions.changeSettings({ volume: Math.max(0, volume - 10) })} />
-        <Text>{String(volume).padStart(3)}</Text>
+        <Text color={C.accent} bold>
+          {String(volume).padStart(3)}
+        </Text>
         <Button key="startup-vol-up" label="+" plain onPress={() => actions.changeSettings({ volume: Math.min(100, volume + 10) })} />
       </Box>
     ),
   }
 }
 
-/** 空闲退出的选项；配置里是别的分钟数时也列出来，选中它 */
-function idleChoices(current: number): Choice<number>[] {
-  const values = IDLE_CHOICES.includes(current) ? IDLE_CHOICES : [...IDLE_CHOICES.filter(n => n !== 0), current, 0].sort((a, b) => (a === 0 ? 1 : b === 0 ? -1 : a - b))
-  return values.map(value => ({ value, label: value === 0 ? '不退出' : `${value}分` }))
+/** 空闲自动退出：‹ 30 分钟 › 在几个选项里轮换；配置里是别的分钟数时也算一档 */
+function IdleStepper(kit: Kit, minutes: number, actions: PaneActions): Control {
+  const { Box, Text, Button } = kit
+  const values = IDLE_CHOICES.includes(minutes) ? IDLE_CHOICES : [...IDLE_CHOICES.slice(0, -1), minutes].sort((a, b) => a - b).concat(0)
+  const index = Math.max(0, values.indexOf(minutes))
+  const pick = (step: number) => values[(index + step + values.length) % values.length] ?? 30
+  const label = minutes === 0 ? '不退出' : `${minutes} 分钟`
+  return {
+    width: 4 + Math.max(cellWidth(label), 7),
+    element: (
+      <Box flexDirection="row" columnGap={1}>
+        <Button key="idle-prev" label="‹" plain onPress={() => actions.changeSettings({ idleExitMinutes: pick(-1) })} />
+        <Box width={7} justifyContent="center">
+          <Text color={C.accent} bold>
+            {label}
+          </Text>
+        </Box>
+        <Button key="idle-next" label="›" plain onPress={() => actions.changeSettings({ idleExitMinutes: pick(1) })} />
+      </Box>
+    ),
+  }
 }
 
 /** cookies 文件：YouTube 拦截播放时要用。名字右边是状态，下面是输入框 */
@@ -807,7 +928,7 @@ function Cookies(kit: Kit, config: ConfigResponse, width: number, actions: PaneA
   const { Box, Text, Input } = kit
   const path = config.settings.cookiesFile
   const status = !path
-    ? { color: C.warning, text: '没有配置' }
+    ? { color: C.warning, text: '▲ 没有配置' }
     : config.hasCookiesFile
       ? { color: C.success, text: '✓ 已配置' }
       : { color: C.error, text: '× 找不到这个文件' }
@@ -899,11 +1020,13 @@ export type MiniPlayerActions = {
 
 /**
  * 输入框上方的迷你播放器，一行：
- *   ♪ 歌名 · 歌手            1:23 ━━━━●──── 3:34   b: ◀◀  p: ▮▮  n: ▶▶  o: 面板
- * 按钮带快捷键（迷你播放器获得焦点后按字母）。右边两段的宽度先算好，剩下的给歌名；越窄收起越多。
+ *   ▃▆▂ 歌名 · 歌手          1:23 ━━━━●──── 3:34   b: ◀◀  p: ▮▮  n: ▶▶  o: 面板
+ * 开头是跳动的均衡器（没有 Client 时是 ♪）。按钮带快捷键（迷你播放器获得焦点后按字母）。
+ * 右边两段的宽度先算好，剩下的给歌名；越窄收起越多。
  */
 export function MiniPlayer(kit: Kit, player: PlayerSnapshot, track: Track, columns: number, actions: MiniPlayerActions): RenderElement {
-  const { Box, Text, Button } = kit
+  const { Box, Text, Button, Client } = kit
+  const prefixWidth = Client ? 4 : 2
   const status = player.status === 'playing' ? undefined : STATUS[player.status]
   const hasSideButtons = columns >= 70
   const elapsed = formatTime(player.position)
@@ -928,14 +1051,20 @@ export function MiniPlayer(kit: Kit, player: PlayerSnapshot, track: Track, colum
 
   const parts = titleParts(track)
   const byline = track.provider === 'bilibili' ? parts.detail : track.artists.join(' / ')
-  const title = truncate(parts.title, leftWidth - 2)
-  const room = leftWidth - 2 - cellWidth(title)
+  const title = truncate(parts.title, leftWidth - prefixWidth)
+  const room = leftWidth - prefixWidth - cellWidth(title)
   const bylineText = byline && room >= 6 ? truncate(` · ${byline}`, room) : ''
   return (
     <Box flexDirection="column">
       <Box flexDirection="row">
         <Box flexDirection="row" width={leftWidth} flexShrink={0}>
-          <Text color={C.accent}>♪ </Text>
+          {Client ? (
+            <Box flexDirection="row" width={4}>
+              <Client key="band-eq" module="./fx/eq.tsx" props={{ status: player.status, bars: 3 } satisfies EqProps} width={3} height={1} />
+            </Box>
+          ) : (
+            <Text color={C.accent}>♪ </Text>
+          )}
           <Text bold>{title}</Text>
           {bylineText ? <Text color={C.dim}>{bylineText}</Text> : null}
         </Box>

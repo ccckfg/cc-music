@@ -328,6 +328,7 @@ export const register: Register = on => {
         Button: kit.Button,
         ...('Input' in kit ? { Input: kit.Input } : {}),
         ...('Raster' in kit ? { Raster: kit.Raster } : {}),
+        ...('Client' in kit ? { Client: kit.Client } : {}),
       },
       {
         columns: e.props.bodyColumns,
@@ -356,10 +357,11 @@ export const register: Register = on => {
     if (!prefs.showMiniPlayer || !player || !track || player.status === 'idle') return next(e)
 
     const below = await next(e)
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const kit = $.ui.resolve(e)
+    const { Box } = kit
     return (
       <Box flexDirection="column">
-        {MiniPlayer({ Box, Text, Button }, player, track, e.props.bodyColumns, {
+        {MiniPlayer({ Box, Text: kit.Text, Button: kit.Button, ...('Client' in kit ? { Client: kit.Client } : {}) }, player, track, e.props.bodyColumns, {
           command: cmd => void press(cmd),
           // 按钮背后是用户的点击：用这个 hook 的 `$` 打开，引擎认作用户要求的
           openPane: () =>

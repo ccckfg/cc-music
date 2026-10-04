@@ -9,18 +9,22 @@ test('从「设置」进入：读出 daemon 的配置，改默认音源、启动
 
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await pane.press({ key: 'tab-settings' })
-  // 选中的项是文字，没选中的是按钮
-  expect(await pane.find({ type: 'Text', text: '哔哩哔哩' })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: '30分' })).toBeDefined()
+  // 选中的项是橙色的 ● 文字，没选中的是 ○ 按钮；空闲退出是 ‹ 30 分钟 ›
+  expect(await pane.find({ type: 'Text', text: '● 哔哩哔哩' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: '30 分钟' })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: 'C:/Users/me/.cc-music/config.json' })).toBeDefined()
 
   await pane.press({ key: 'provider-ytmusic' })
   await pane.press({ key: 'startup-vol-down' })
-  await pane.press({ key: 'idle-0' })
-  expect(fake.configPatches).toEqual([{ defaultProvider: 'ytmusic' }, { volume: 50 }, { idleExitMinutes: 0 }])
-  expect(await pane.find({ type: 'Text', text: 'YouTube Music' })).toBeDefined()
+  await pane.press({ key: 'idle-next' })
+  await pane.press({ key: 'idle-next' })
+  expect(fake.configPatches).toEqual([{ defaultProvider: 'ytmusic' }, { volume: 50 }, { idleExitMinutes: 60 }, { idleExitMinutes: 0 }])
+  expect(await pane.find({ type: 'Text', text: '● YouTube Music' })).toBeDefined()
   expect(await pane.find({ key: 'provider-bilibili' })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: '不退出' })).toBeDefined()
+  // 从“不退出”往后转一圈回到 10 分钟
+  await pane.press({ key: 'idle-next' })
+  expect(fake.configPatches.at(-1)).toEqual({ idleExitMinutes: 10 })
 
   await pane.press({ key: 'tab-settings' })
   expect(await pane.find({ type: 'Text', text: /还没有在播放/ })).toBeDefined()
@@ -93,8 +97,8 @@ test('保存失败：设置页显示原因，原来的值不变', async ($, on) 
 
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await pane.press({ key: 'tab-settings' })
-  await pane.press({ key: 'idle-10' })
+  await pane.press({ key: 'idle-prev' })
   expect(await pane.find({ type: 'Text', text: /写不了 config\.json/ })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: '30分' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: '30 分钟' })).toBeDefined()
   await pane.unmount()
 })

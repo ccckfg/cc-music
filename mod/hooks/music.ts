@@ -183,6 +183,35 @@ const REPEAT_MODES: Record<string, RepeatMode> = {
   one: 'one', single: 'one', 单曲: 'one', 单曲循环: 'one',
 }
 
+/** 英文命令词：/music 后面只有一个词、又和其中一个只差一个字母时，多半是打错了 */
+const COMMAND_WORDS = [
+  'pause', 'resume', 'toggle', 'next', 'skip', 'prev', 'previous', 'stop', 'clear',
+  'volume', 'seek', 'repeat', 'queue', 'jump', 'remove', 'show', 'hide', 'lyrics',
+  'favs', 'favorites', 'history', 'restart', 'providers', 'quit', 'exit', 'search',
+  'status', 'help', 'panel',
+]
+
+/** 打错的命令（/music resyart → restart）；不像打错时返回 undefined，照常拿去搜歌 */
+function typoOf(word: string): string | undefined {
+  if (!/^[a-z]{4,}$/.test(word) || COMMAND_WORDS.includes(word)) return undefined
+  return COMMAND_WORDS.find(command => Math.abs(command.length - word.length) <= 1 && editDistance(word, command) <= 1)
+}
+
+/** 编辑距离，相邻两个字母对调也算一步（resatrt → restart） */
+function editDistance(a: string, b: string): number {
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) => Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)))
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      const row = d[i] as number[]
+      const above = d[i - 1] as number[]
+      row[j] = Math.min((above[j] ?? 0) + 1, (row[j - 1] ?? 0) + 1, (above[j - 1] ?? 0) + cost)
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) row[j] = Math.min(row[j] ?? 0, ((d[i - 2] as number[])[j - 2] ?? 0) + 1)
+    }
+  }
+  return (d[a.length] as number[])[b.length] ?? 0
+}
+
 const SIMPLE: Record<string, PlayerCommand> = {
   pause: { type: 'pause' }, 暂停: { type: 'pause' },
   resume: { type: 'resume' }, play: { type: 'resume' }, 继续: { type: 'resume' }, 播放: { type: 'resume' },
@@ -336,6 +365,9 @@ async function runMusicText(host: Host, args: string, onPlayNow: () => void): Pr
       return `已加入队列（第 ${player.queue.length} 首）：${trackLabel(top)}`
     }
   }
+
+  const typo = typoOf(text.toLowerCase())
+  if (typo) throw new Error(`没有 “${text}” 这个命令，是想输入 /music ${typo} 吗？要搜这首歌请用 /music search ${text}。`)
 
   if (/^\d+$/.test(text)) {
     const track = await resultAt(host, Number(text))
