@@ -1,80 +1,70 @@
 # cc-music
 
-**在 Claude Code 里听音乐，不用离开终端。**
+**写代码的时候，让 Claude 顺手放首歌。**
 
-输入 `/music 晴天 周杰伦` 点歌，或者直接说“放点适合写代码的歌”。音乐在后台播放，你可以继续让 Claude 写代码。
+敲一句 `/music 晴天 周杰伦`，或者直接跟 Claude 说“来点适合写代码的歌”，音乐就在后台响起来了。你接着写你的代码，它接着放它的歌。
 
 ![Claude Code 对话区、迷你播放器和 cc-music 侧边栏](docs/images/player.svg)
 
-上图是按真实界面渲染结果绘制的 SVG 示意图，歌曲、歌词、封面和对话使用演示数据，不是真实播放截图。SVG 包含动画；实际显示效果取决于终端字体、窗口大小和主题。
+## 都有些什么
 
-## 能做什么
+- **点歌、切歌、调音量**：搜索、播放、暂停、上一首下一首、拖进度、单曲循环，一条命令搞定。
+- **侧边栏播放器**：块字符画的封面、跟着节奏跳的音符、频谱动画，还有卡拉 OK 式逐字染色的歌词。
+- **迷你播放器**：常驻输入框上方，瞄一眼就知道在放什么，顺手就能暂停。
+- **队列、收藏、历史**：搜到喜欢的，立刻播放或者排到后面，听过的都有记录。
+- **动嘴就行**：Claude 会调用插件的 `music` 工具，命令记不住也没关系。
+- **两个音源**：默认哔哩哔哩，国内直连；也能用 YouTube Music。
 
-- **点歌与控制**：搜索、播放、暂停、切歌、跳转、音量、循环播放。
-- **侧边栏播放器**：块字符封面、跳动的音符、频谱风格动画、进度条和随播放推进的歌词染色。
-- **迷你播放器**：输入框上方显示当前曲目和进度，不打开面板也能控制。
-- **整理歌单**：播放队列、收藏、播放历史；搜到的歌可以立即播放或加到队尾。
-- **自然语言点歌**：Claude 可以调用插件的 `music` 工具，不用记住所有命令。
-- **两个音源**：默认使用哔哩哔哩，也支持 YouTube Music。音源可以扩展。
-
-播放器是独立后台进程。Claude Code 退出、插件热重载不会打断音乐，多个会话共用一个播放器。默认在**未播放且 30 分钟没有操作**时自动退出；立即关闭用 `/music quit`。
+播放器是一个独立的后台进程：Claude Code 关了、插件热重载了，音乐都不停，几个会话还能共用一个播放器。没在放歌且 30 分钟没人理它，它会自己退出；想马上关掉就 `/music quit`。
 
 ## 安装
 
-### 1. 准备运行环境
+### 1. 先备好这几样
 
-| 软件 | 要求 | 用途 |
+| 软件 | 版本 | 干什么用 |
 | --- | --- | --- |
-| Claude Code | **2.1.288 或更新版本**，支持 mods | 加载命令、工具和播放器界面 |
-| Node.js | **22.18 或更新版本** | 运行后台播放器 |
-| mpv | 可从终端调用 | 实际播放音频 |
-| yt-dlp | 可从终端调用，建议保持最新 | 从音源页面解析音频 |
-| ffmpeg | 可选，推荐安装 | 把封面转换为终端可显示的像素 |
+| Claude Code | 2.1.288+（支持 mods） | 加载命令、工具和播放器界面 |
+| Node.js | 22.18+ | 跑后台播放器 |
+| mpv | 最新即可 | 真正出声的那个 |
+| yt-dlp | 越新越好 | 从音源页面取音频 |
+| ffmpeg | 可选，强烈推荐 | 画封面 |
 
-目前主要在 **Windows** 上开发和测试，macOS / Linux 尚未完整验证。
-
-如果你已经安装了 [Scoop](https://scoop.sh/)，在 PowerShell 中运行：
+Windows 用户有 [Scoop](https://scoop.sh/) 的话，一行搞定：
 
 ```powershell
 scoop install mpv yt-dlp ffmpeg
-# 还没有满足版本要求的 Node.js 时，再安装：
+# Node.js 版本不够的话再加上：
 scoop install nodejs-lts
 ```
 
-也可以自行安装这些软件并加入 `PATH`。安装后重新打开终端，确认 `claude --version`、`node --version`、`mpv --version` 和 `yt-dlp --version` 能正常运行。
+装完重开一下终端，`node --version`、`mpv --version`、`yt-dlp --version` 都能跑就妥了。
 
 ### 2. 从插件市场安装（推荐）
 
-在 Claude Code 的输入框里，依次执行：
+在 Claude Code 里输入：
 
 ```text
 /plugin marketplace add ccckfg/cc-music
 /plugin install cc-music@cc-music
 ```
 
-第一个命令添加本项目的插件市场，第二个安装播放器。仓库本身就是插件，界面和后台会一起安装，符合要求的 npm 依赖由 Claude Code 自动安装。
-
-安装完成后重新打开 Claude Code 会话。如果出现插件权限提示，核对内容后授权加载。然后输入：
+界面、后台和 npm 依赖会一起装好。重开一个会话，来一首试试：
 
 ```text
 /music 晴天 周杰伦
 ```
 
-第一次使用会自动启动后台播放器，冷启动可能需要十几秒。默认搜索哔哩哔哩，不需要另建播放器账号。
+第一次会顺便把后台播放器拉起来，稍等几秒就响了。
 
-> 插件市场不会替你安装 Node.js、mpv、yt-dlp 或 ffmpeg。它们仍需要先准备好。
+### 懒人法：让 agent 帮你装
 
-### 备选：让 agent 帮你安装
-
-把下面这句话发给有终端权限的 Claude Code 或其他 coding agent：
+把这句话丢给 Claude Code 或任何能跑命令的 coding agent：
 
 ```text
-请帮我安装 https://github.com/ccckfg/cc-music：先检查 Claude Code 是否支持 mods、Node.js 是否 >= 22.18，以及 mpv、yt-dlp、ffmpeg 是否可用；缺少软件时先告诉我并征求确认。优先通过 Claude Code 插件市场添加 ccckfg/cc-music，安装 cc-music@cc-music，不要覆盖我已有的配置。装完告诉我需要重新打开会话，并用 /music 验证插件能加载，不要自动播放音乐。
+帮我安装 https://github.com/ccckfg/cc-music：检查 Claude Code、Node.js（>= 22.18）、mpv、yt-dlp、ffmpeg 是否就绪，缺什么先告诉我；然后通过插件市场添加 ccckfg/cc-music 并安装 cc-music@cc-music，装好后提醒我重开会话。
 ```
 
-### 从源码加载（开发或临时体验）
-
-在终端中执行：
+### 从源码跑
 
 ```sh
 git clone https://github.com/ccckfg/cc-music.git
@@ -83,9 +73,9 @@ npm ci
 claude --plugin-dir .
 ```
 
-这里的 `.` 是**仓库根目录**，不是 `mod/`。`--plugin-dir` 只对这次启动生效，日常使用推荐插件市场安装。
+`.` 就是仓库根目录，整个仓库就是一个插件。
 
-## 开始使用
+## 开始听歌
 
 ### 点歌
 
@@ -95,18 +85,18 @@ claude --plugin-dir .
 /music yt:Yellow Coldplay
 ```
 
-会播放第一个搜索结果。写“歌名 歌手”通常比只写歌名更准确；B 站结果可能是 MV、现场或翻唱，以搜索结果为准。
+直接播放第一个搜索结果。“歌名 + 歌手”最准。
 
-想先挑选，再播放：
+想挑一挑再放：
 
 ```text
 /music search 晴天 周杰伦
 /music 2
 ```
 
-序号对应**本会话最近一次搜索**。直接点歌会把新歌插在当前歌曲之后并立即切过去，原队列保留。
+序号就是刚才那次搜索的结果。点歌会插在当前这首后面并马上切过去，原来的队列一首不少。
 
-也可以直接对 Claude 说：
+或者干脆跟 Claude 聊：
 
 ```text
 放点周杰伦的歌。
@@ -117,99 +107,93 @@ claude --plugin-dir .
 
 ### 打开面板
 
-输入 `/music` 打开面板，点击图标切换**正在播放、搜索、队列、收藏、历史、设置**。
+输入 `/music`，点上面的图标在**正在播放、搜索、队列、收藏、历史、设置**之间切换。
 
 ![cc-music 的搜索、队列和设置页](docs/images/panels.svg)
 
-- 点击歌名立即播放，点 `+` 加到队尾，队列里点 `×` 移除。
-- 点击或拖动进度条跳转，点击或拖动音量条调整音量。
-- 点播放键暂停 / 继续，点心形收藏，点循环图标切换模式。
-- 用 Tab 在可聚焦控件间移动，回车触发。标签栏、播放控制和音量条获得焦点后支持方向键；播放控制支持空格暂停。
-- 迷你播放器获得焦点后，`b` / `p` / `n` / `o` 分别是上一首 / 暂停 / 下一首 / 打开面板。焦点切换用 `Ctrl+X`，再按 Tab。
+- 点歌名直接播放，点 `+` 排到队尾，点 `×` 移出队列。
+- 进度条和音量条都能点、能拖。
+- 胶囊按钮暂停 / 继续，心形收藏，循环图标切换模式。
+- 键盘党：Tab 切换控件，回车按下；选中标签栏、播放控制或音量条后，← → 切标签、切歌、调音量，空格暂停。
+- 迷你播放器：`Ctrl+X` 再按 Tab 选中它，然后 `b` / `p` / `n` / `o` 分别是上一首 / 暂停 / 下一首 / 打开面板。
 
-**面板不在右侧？** 默认全屏布局下，终端宽度至少 110 列才会停靠成侧边栏；否则显示在输入框上方。`CLAUDE_CODE_NO_FLICKER=0` 或 tmux 的主屏幕布局也会影响位置。全屏布局下点歌会自动打开面板，可以在设置页关闭。
+**想让面板停在右边当侧边栏？** 全屏布局下把终端拉到 110 列以上就行，窄了它会待在输入框上方。全屏布局下点歌时侧边栏会自动弹出来，不喜欢可以在设置里关掉。
 
-封面使用终端块字符，不依赖终端图片协议。适当拉宽侧边栏、增加终端高度，效果会更清楚。
+封面是用块字符一格一格画出来的，侧边栏越宽、终端越高，封面越清楚。
 
-### 常用命令
+### 命令速查
 
 | 命令 | 作用 |
 | --- | --- |
-| `/music` | 打开播放器面板 |
+| `/music` | 打开面板 |
 | `/music <歌名>` | 搜索并播放第一个结果 |
-| `/music search <歌名>`、`/music <序号>` | 搜索候选、播放其中一首 |
-| `/music add <歌名\|序号\|all>` | 加入队尾；`all` 加入最近搜索的全部结果 |
+| `/music search <歌名>`、`/music <序号>` | 先搜，再挑一首放 |
+| `/music add <歌名\|序号\|all>` | 排到队尾，`all` 是把刚搜到的全排上 |
 | `/music pause` / `resume` / `toggle` | 暂停 / 继续 / 切换 |
-| `/music next` / `prev` / `stop` | 下一首 / 上一首 / 停止播放 |
-| `/music vol 40`、`/music vol +10` | 设置音量，或相对调整（0–100） |
-| `/music seek 1:30`、`/music seek +10` | 跳到指定时间，或相对跳转（秒） |
-| `/music repeat off` / `all` / `one` | 不循环 / 队列循环 / 单曲循环 |
-| `/music queue`、`jump <n>`、`remove <n>`、`clear` | 查看、跳转、移除、清空队列；后面三个也要加 `/music` |
-| `/music lyrics` | 查看当前歌词 |
-| `/music fav` / `favs` / `history` | 收藏或取消收藏当前歌 / 查看收藏 / 历史 |
-| `/music show` / `hide` | 显示 / 隐藏迷你播放器，偏好会保存 |
-| `/music providers` / `status` | 查看音源 / 当前状态 |
-| `/music restart` | 重启后台，保留队列和进度；升级后使用 |
-| `/music quit` | 关闭后台播放器和 mpv |
+| `/music next` / `prev` / `stop` | 下一首 / 上一首 / 停止 |
+| `/music vol 40`、`/music vol +10` | 音量（0–100），可以加减 |
+| `/music seek 1:30`、`/music seek +10` | 跳到某个时间，或前后跳几秒 |
+| `/music repeat off` / `all` / `one` | 不循环 / 列表循环 / 单曲循环 |
+| `/music queue` / `jump <n>` / `remove <n>` / `clear` | 看队列 / 跳到第 n 首 / 移除 / 清空 |
+| `/music lyrics` | 当前歌词 |
+| `/music fav` / `favs` / `history` | 收藏当前这首 / 看收藏 / 看历史 |
+| `/music show` / `hide` | 显示 / 隐藏迷你播放器 |
+| `/music providers` / `status` | 音源列表 / 播放状态 |
+| `/music restart` | 重启后台，队列和进度都保留，升级后用它 |
+| `/music quit` | 关掉后台播放器 |
 
 ## 设置
 
-点击面板标签栏最右边的 **⚙**：
+点标签栏最右边的 **⚙**：
 
-- **播放**：默认音源、启动音量。启动音量在下一次后台启动时生效。
-- **界面**：迷你播放器、点歌时自动打开侧边栏、封面开关。偏好保存在 Claude Code 的插件存储中。
-- **YouTube Music**：填写 cookies 文件的完整路径，回车保存，并检查文件是否存在。
-- **后台播放器**：空闲退出时间、依赖检测、重启按钮、配置文件位置。退出时间设为 0 表示不自动退出。
+- **播放**：默认音源、启动音量。
+- **界面**：迷你播放器、点歌时自动开侧边栏、封面，三个开关，下次会话还记得。
+- **YouTube Music**：填 cookies 文件路径，回车保存，顺便告诉你文件在不在。
+- **后台播放器**：空闲多久退出（0 是永不退出）、mpv / yt-dlp / ffmpeg 找到没、一键重启。
 
-后台配置保存在 `~/.cc-music/config.json`，首次启动自动生成。Windows 的 `~` 通常是 `C:\Users\<用户名>`。
+这些设置存在 `~/.cc-music/config.json`，也可以直接改文件：
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `defaultProvider` | `bilibili` | 默认搜索音源，也可设为 `ytmusic` |
+| `defaultProvider` | `bilibili` | 默认音源，可选 `ytmusic` |
 | `volume` | `60` | 启动音量 |
-| `mpvPath` / `ytdlpPath` / `ffmpegPath` | 自动查找 | 需要时填写可执行文件完整路径 |
-| `jsRuntime` | `node` | yt-dlp 的 JavaScript 运行时，用于 YouTube 解析 |
-| `cookiesFile` | 空 | 导出的 cookies.txt 路径 |
-| `cookiesFromBrowser` | 空 | yt-dlp 的浏览器 cookies 来源，例如 `firefox` |
-| `idleExitMinutes` | `30` | 未播放时的空闲退出时间，0 禁用 |
+| `mpvPath` / `ytdlpPath` / `ffmpegPath` | 自动找 | 找不到时手动填完整路径 |
+| `jsRuntime` | `node` | 给 yt-dlp 解析 YouTube 用 |
+| `cookiesFile` | 空 | cookies.txt 路径 |
+| `cookiesFromBrowser` | 空 | 从浏览器读 cookies，比如 `firefox` |
+| `idleExitMinutes` | `30` | 空闲多久退出，0 不退出 |
 
-设置页的后台配置修改会立即应用（启动音量除外）；手动改文件后执行 `/music restart`。收藏和历史在 `~/.cc-music/library.json`，日志在 `~/.cc-music/daemon.log`。
+手动改完文件 `/music restart` 一下就生效。收藏和历史在 `~/.cc-music/library.json`，日志在 `~/.cc-music/daemon.log`。
 
-高级环境变量：`CC_MUSIC_HOME` 覆盖数据目录，`CC_MUSIC_NODE` 指定 Node.js，`CC_MUSIC_DAEMON` 指定 `daemon/src/launch.ts`。通常不需要设置。
+还有几个环境变量给折腾党：`CC_MUSIC_HOME` 换数据目录，`CC_MUSIC_NODE` 指定 Node.js，`CC_MUSIC_DAEMON` 指定 `daemon/src/launch.ts`。
 
-## 常见问题
+## 遇到问题
 
-**没有 `/music` 命令，或安装后没出现界面**
+**输入 `/music` 没反应**
 
-先确认 Claude Code 版本支持 mods，在 `/plugin` 中检查 cc-music 是否启用，再重新打开会话。组织策略也可能禁止 mods，普通插件能加载不代表 mod 被允许。
+到 `/plugin` 里看看 cc-music 启用了没有，然后重开会话。
 
-**找不到 mpv / yt-dlp，或后台启动失败**
+**后台起不来，提示找不到 mpv / yt-dlp**
 
-安装后重新打开终端，确认它们在 `PATH` 中；也可以在配置里指定完整路径。查看设置页的依赖检测和 `daemon.log`。日志可能包含本地路径，反馈问题前请检查并移除敏感信息，不要上传 cookies、token 或整个数据目录。
+确认它们在 `PATH` 里，或者在配置里填上完整路径。设置页的「后台播放器」能看到哪个没找到，详细原因在 `daemon.log`。
 
-**YouTube 能搜到，但播放提示“确认你不是机器人”**
+**YouTube 搜得到，放不出来，说要“确认你不是机器人”**
 
-搜索和播放走不同的接口。YouTube 可能要求当前网络出口完成验证，尤其是使用代理时：
+这是 YouTube 在拦你的网络出口（挂代理时很常见）。给 yt-dlp 喂一份登录过的 cookies 就好：
 
-1. 在浏览器登录 YouTube，通过可信扩展导出 `cookies.txt`。
-2. 在设置页填写文件的完整路径，回车保存，再执行 `/music restart`。
-3. 也可以设置 `cookiesFromBrowser` 为 `firefox`，或更换网络出口。Windows 上 Chrome / Edge 的 cookies 加密可能导致 yt-dlp 无法读取。
+1. 浏览器里登录 YouTube，用扩展（比如 Get cookies.txt LOCALLY）导出 `cookies.txt`。
+2. 在设置页填上它的完整路径，回车，然后 `/music restart`。
+3. 或者把 `cookiesFromBrowser` 设成 `firefox`，再不行就换个代理节点。
 
-cookies 相当于登录凭据，只保存在本机，不要提交到 Git、发给 agent 或上传到 issue。提供 cookies 也不保证所有地区限制或验证都能绕过。
+**没封面、没歌词**
 
-**没有封面、歌词，或歌词版本不对**
+封面要靠 ffmpeg，记得装上。歌词来自 [LRCLIB](https://lrclib.net)，冷门歌、现场版、纯音乐可能找不到。B 站的标题会先去掉【标签】、提取《歌名》再搜，还会按时长挑最接近的版本。
 
-封面需要 ffmpeg 和音源提供的缩略图。歌词来自 [LRCLIB](https://lrclib.net)，并非每首歌都有；现场、翻唱、纯音乐可能无歌词或匹配到其他版本。B 站标题会清理标签、提取《歌名》，再按时长挑选结果。
+**怎么更新、怎么卸载**
 
-**界面的频谱是真实音频分析吗？**
+更新：`/plugin marketplace update cc-music`，再到 `/plugin` 里更新 cc-music，重开会话后 `/music restart`。
 
-不是。它是播放状态驱动的频谱风格动画，没有采样音频或做 FFT 分析。
-
-**更新和卸载**
-
-用 `/plugin marketplace update cc-music` 刷新市场，再到 `/plugin` 的已安装列表更新 cc-music。按 Claude Code 的提示重新加载或重新打开会话，然后 `/music restart`，让正在运行的后台也使用新版。
-
-卸载前先 `/music quit`，再执行 `/plugin uninstall cc-music@cc-music`。卸载插件不会自动删除 `~/.cc-music` 中的配置、收藏和历史。
+卸载：先 `/music quit`，再 `/plugin uninstall cc-music@cc-music`。`~/.cc-music` 里的收藏和历史会留着，想彻底清掉就手动删。
 
 ## 开发与扩展
 
@@ -217,30 +201,30 @@ cookies 相当于登录凭据，只保存在本机，不要提交到 Git、发�
 cc-music/
 ├─ .claude-plugin/   插件清单、市场清单、Claude Code 生成的类型
 ├─ hooks/            命令、模型工具、状态、面板与迷你播放器
-│  └─ fx/            绘制线程上的动画和鼠标交互控件
+│  └─ fx/            绘制线程上的动画和可点的控件
 ├─ daemon/src/       本机 HTTP 接口、队列、配置和 mpv IPC
 │  ├─ providers/     哔哩哔哩、YouTube Music 音源
 │  └─ lyrics/        歌词来源
 ├─ types/            插件端的数据类型
 ├─ tests/            Claude Code 插件测试
-└─ docs/images/      README 的 SVG 展示图
+└─ docs/images/      README 里的配图
 ```
 
-数据流：Claude Code mod → 带随机 token 的本机 HTTP 接口 → daemon → mpv JSON IPC → yt-dlp 解析音源。HTTP 只监听 `127.0.0.1`；Windows 使用命名管道，其他平台使用 Unix socket。
+数据怎么走：Claude Code mod → 本机 HTTP（带随机 token，只听 `127.0.0.1`）→ daemon → mpv JSON IPC → yt-dlp 取音频。
 
 ```sh
 npm ci
-npm test             # 加载插件并运行测试，首次生成 Claude Code 类型
-npm run check        # daemon + 插件类型检查、清单校验、插件测试
-npm run daemon       # 前台运行后台播放器，调试用
+npm test             # 加载插件并跑测试，顺便生成 Claude Code 类型
+npm run check        # 类型检查 + 清单校验 + 测试，一条龙
+npm run daemon       # 前台跑后台播放器，调试用
 ```
 
-`tsconfig.json` 继承 Claude Code 生成的 `.claude-plugin/types/tsconfig.json`。如果类型没有写入源码目录，先从该目录运行一次 `claude --plugin-dir .`，再运行检查。生成的类型不提交到 Git。
+`tsconfig.json` 继承 Claude Code 生成的 `.claude-plugin/types/tsconfig.json`，刚克隆下来先跑一次 `npm test` 或 `claude --plugin-dir .` 把它生成出来。
 
-开发时用 `claude --plugin-dir .`，修改会热重载。不要在 Windows 上用 junction 链到会话的 mods 目录，热重载可能监视不到真实文件的变化。
+开发时用 `claude --plugin-dir .`，改完自动热重载。Windows 上别用 junction 把目录链进会话的 mods 目录，热重载会看不到改动。
 
-- 新增音源：实现 `daemon/src/providers/types.ts` 中的 `MusicProvider`，在 `providers/index.ts` 注册。
-- 新增歌词来源：实现 `daemon/src/lyrics/types.ts` 中的 `LyricsProvider`，在 `lyrics/index.ts` 注册。
-- 面板绘制在 `hooks/view.tsx`，宿主调用和事件注册在 `hooks/register.tsx`；不要把沙箱的 `$` 传给普通函数。
+- 加音源：实现 `daemon/src/providers/types.ts` 里的 `MusicProvider`，在 `providers/index.ts` 注册。yt-dlp 支持的网站基本都能接。
+- 加歌词来源：实现 `daemon/src/lyrics/types.ts` 里的 `LyricsProvider`，在 `lyrics/index.ts` 注册。
+- 面板怎么画在 `hooks/view.tsx`，状态和事件在 `hooks/register.tsx`。沙箱里的 `$` 只能在 hook 里直接用，别传给别的函数。
 
-播放控制方式参考了 [youtube-music-cli](https://github.com/involvex/youtube-music-cli)。请遵守音源平台的使用条款；本项目不提供音乐文件，也不保证所有搜索结果始终可播放。
+mpv 的控制方式参考了 [youtube-music-cli](https://github.com/involvex/youtube-music-cli)，感谢！
