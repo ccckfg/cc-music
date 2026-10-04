@@ -94,9 +94,11 @@ describe('cc-music 面板', () => {
     await $.command.run(music(''))
 
     const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    // 没收藏时 ♥ 是淡的，收藏后亮起来
+    expect((await pane.find({ key: 'favorite', text: '♥' }))?.props['dimColor']).toBe(true)
     await pane.press({ key: 'favorite' })
     expect(fake.library.favorites).toEqual([SUNNY])
-    expect(await pane.find({ key: 'favorite', text: '♥' })).toBeDefined()
+    expect((await pane.find({ key: 'favorite', text: '♥' }))?.props['dimColor']).toBe(false)
 
     await pane.press({ key: 'tab-favorites' })
     expect(await pane.find({ key: 'fav-0-play', text: '晴天' })).toBeDefined()

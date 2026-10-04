@@ -35,7 +35,61 @@ export function parseTime(text: string): { seconds: number; relative: boolean } 
 }
 
 export function trackLabel(track: Track): string {
-  return track.artists.length > 0 ? `${track.title} — ${track.artists.join(' / ')}` : track.title
+  const title = decodeEntities(track.title)
+  return track.artists.length > 0 ? `${title} — ${track.artists.join(' / ')}` : title
+}
+
+const NAMED_ENTITIES: Record<string, string> = { quot: '"', apos: "'", lt: '<', gt: '>', amp: '&', nbsp: ' ' }
+
+/** 解 HTML 实体；B 站的标题有时转义两遍（`&amp;#x27;`），旧版 daemon 存下的收藏、历史里还有 */
+export function decodeEntities(text: string): string {
+  let out = text
+  for (let pass = 0; pass < 3; pass += 1) {
+    const decoded = out.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, body: string) => {
+      if (body[0] !== '#') return NAMED_ENTITIES[body.toLowerCase()] ?? entity
+      const isHex = body[1] === 'x' || body[1] === 'X'
+      const code = Number.parseInt(body.slice(isHex ? 2 : 1), isHex ? 16 : 10)
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity
+    })
+    if (decoded === out) break
+    out = decoded
+  }
+  return out
+}
+
+/** 面板里显示的标题：title 是歌名，detail 是标题里剩下的修饰（歌手、“超清现场”、【标签】），没有时为空 */
+export type TitleParts = { title: string; detail: string }
+
+/** (Official Video)、(Lyric Video)、（官方MV）这类视频后缀 */
+const VIDEO_SUFFIX = /\s*[(（]\s*(?:official|lyrics?|audio|video|music video|mv|visuali[sz]er|hd|4k|官方|中字|中英)[^)）]*[)）]/gi
+
+/**
+ * 拆标题。B 站的标题常是“歌手《歌名》修饰词”“日推|《歌名》- 歌手”或带【标签】：
+ * 有《书名号》就取它当歌名，其余的放进 detail；没有就去掉视频后缀、理顺分隔符。YouTube Music 的标题本来就干净。
+ */
+export function titleParts(track: Track): TitleParts {
+  const raw = decodeEntities(track.title).replace(/\s+/g, ' ').trim()
+  if (track.provider !== 'bilibili') return { title: raw, detail: '' }
+  const tags = [...raw.matchAll(/【([^】]*)】/g)].map(match => (match[1] ?? '').trim()).filter(Boolean)
+  const rest = raw.replace(/【[^】]*】/g, ' ')
+  const book = /《([^》]+)》/.exec(rest)
+  const title = book?.[1]?.trim()
+  if (book && title) {
+    const detail = tidy(rest.replace(book[0], ' | '))
+    return { title, detail: [detail, ...tags].filter(Boolean).join(' · ') }
+  }
+  return { title: tidy(rest.replace(VIDEO_SUFFIX, ' ')) || raw, detail: tags.join(' · ') }
+}
+
+/** 把 | ｜ 和两边带空格的 - — / 换成 ·，去掉首尾和重复的分隔符 */
+function tidy(text: string): string {
+  return text
+    .replace(/\s*[|｜]\s*/g, ' · ')
+    .replace(/\s+[-—–/／]+\s+/g, ' · ')
+    .replace(/\s+/g, ' ')
+    .replace(/(?:\s*·\s*){2,}/g, ' · ')
+    .replace(/^\s*·\s*|\s*·\s*$/g, '')
+    .trim()
 }
 
 export function describeStatus(player: PlayerSnapshot | null): string {

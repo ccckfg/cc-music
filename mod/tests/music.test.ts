@@ -67,7 +67,7 @@ test('迷你播放器：播放时显示曲目，按钮能暂停；空闲时不�
   for (const surface of ['terminal', 'desktop'] as const) {
     const band = await $.ui.mount({ ...BAND, surface })
     expect(await band.find({ type: 'Text', text: '晴天' })).toBeDefined()
-    expect(await band.find({ key: 'toggle', text: '❚❚' })).toBeDefined()
+    expect(await band.find({ key: 'toggle', text: '▮▮' })).toBeDefined()
     await band.press({ key: 'toggle' })
     expect(await band.find({ key: 'toggle', text: '▶' })).toBeDefined()
     await band.press({ key: 'toggle' })

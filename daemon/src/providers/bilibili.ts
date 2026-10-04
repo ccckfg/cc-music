@@ -31,16 +31,25 @@ type SearchItem = {
 
 type ApiResponse<T> = { code: number; message?: string; data?: T }
 
-/** 搜索结果的标题带 `<em class="keyword">` 高亮和 HTML 实体，去掉它们。 */
-function plainText(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, '')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .trim()
+const NAMED_ENTITIES: Record<string, string> = { quot: '"', apos: "'", lt: '<', gt: '>', amp: '&', nbsp: ' ' }
+
+/**
+ * 搜索结果的标题带 `<em class="keyword">` 高亮和 HTML 实体，去掉它们。
+ * B 站有时转义两遍（`&amp;#x27;`），所以解到不再变为止。
+ */
+export function plainText(html: string): string {
+  let text = html.replace(/<[^>]*>/g, '')
+  for (let pass = 0; pass < 3; pass += 1) {
+    const decoded = text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, body: string) => {
+      if (body[0] !== '#') return NAMED_ENTITIES[body.toLowerCase()] ?? entity
+      const isHex = body[1] === 'x' || body[1] === 'X'
+      const code = Number.parseInt(body.slice(isHex ? 2 : 1), isHex ? 16 : 10)
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity
+    })
+    if (decoded === text) break
+    text = decoded
+  }
+  return text.trim()
 }
 
 /** `4:30`、`1:02:03` → 秒 */
