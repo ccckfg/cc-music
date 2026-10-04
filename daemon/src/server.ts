@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 
+import { describeConfig, updateConfig, type Config } from './config.ts'
 import type { CoverService } from './cover.ts'
 import type { Library } from './library.ts'
 import { log } from './log.ts'
@@ -8,6 +9,7 @@ import type { LyricsService } from './lyrics/index.ts'
 import type { Player } from './player/player.ts'
 import { VERSION } from './paths.ts'
 import type {
+  ConfigPatch,
   CoverRequest,
   FavoriteRequest,
   HealthResponse,
@@ -25,6 +27,8 @@ const MAX_SEARCH_LIMIT = 30
 
 export type ServerDeps = {
   token: string;
+  /** daemon 各处共用的配置；POST /config 直接改它 */
+  config: Config;
   player: Player;
   registry: ProviderRegistry;
   lyrics: LyricsService;
@@ -110,6 +114,19 @@ async function handle(deps: ServerDeps, request: IncomingMessage, response: Serv
       const body = (await readJson(request)) as Partial<FavoriteRequest>
       deps.library.setFavorite(requireTrack(body.track), body.favorite === true)
       return send(response, 200, deps.library.snapshot())
+    }
+    case 'GET /config':
+      return send(response, 200, describeConfig(deps.config))
+    case 'POST /config': {
+      deps.onActivity()
+      const patch = (await readJson(request)) as ConfigPatch
+      try {
+        updateConfig(deps.config, patch, idOrAlias => deps.registry.find(idOrAlias)?.id)
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : String(error))
+      }
+      if (patch.cookiesFile !== undefined) await deps.player.refreshYtdlOptions()
+      return send(response, 200, describeConfig(deps.config))
     }
     case 'POST /shutdown': {
       send(response, 200, { ok: true })

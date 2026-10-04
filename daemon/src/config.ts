@@ -4,6 +4,7 @@ import { delimiter, join } from 'node:path'
 
 import { log } from './log.ts'
 import { CONFIG_FILE } from './paths.ts'
+import type { ConfigPatch, ConfigResponse } from './protocol.ts'
 
 /** ~/.cc-music/config.json 的内容；空字符串表示“自动”。 */
 export type Config = {
@@ -79,4 +80,67 @@ export function resolveTool(configured: string, envName: string, name: string, s
   if (onPath) return onPath
   const scoop = join(process.env['SCOOP'] ?? join(homedir(), 'scoop'), scoopRelative)
   return existsSync(scoop) ? scoop : undefined
+}
+
+export function findMpv(config: Config): string | undefined {
+  return resolveTool(config.mpvPath, 'CC_MUSIC_MPV', 'mpv', 'apps/mpv/current/mpv.exe')
+}
+
+export function findYtdlp(config: Config): string | undefined {
+  return resolveTool(config.ytdlpPath, 'CC_MUSIC_YTDLP', 'yt-dlp', 'shims/yt-dlp.exe')
+}
+
+export function findFfmpeg(config: Config): string | undefined {
+  return resolveTool(config.ffmpegPath, 'CC_MUSIC_FFMPEG', 'ffmpeg', 'shims/ffmpeg.exe')
+}
+
+/** 设置页看到的配置：能改的项、配置文件位置、cookies 文件在不在、找到的工具。 */
+export function describeConfig(config: Config): ConfigResponse {
+  return {
+    settings: {
+      defaultProvider: config.defaultProvider,
+      volume: config.volume,
+      cookiesFile: config.cookiesFile,
+      idleExitMinutes: config.idleExitMinutes,
+    },
+    configFile: CONFIG_FILE,
+    hasCookiesFile: config.cookiesFile !== '' && existsSync(config.cookiesFile),
+    tools: { mpv: findMpv(config) ?? null, ytdlp: findYtdlp(config) ?? null, ffmpeg: findFfmpeg(config) ?? null },
+  }
+}
+
+/**
+ * 设置页改配置：逐项校验后改进 config（daemon 各处共用这个对象，所以立即生效），
+ * 再写回 config.json，文件里的其他字段原样保留。有一项不合法就抛错，什么都不改。
+ * `providerId` 把音源 id 或别名换成 id，不认识时返回 undefined。
+ */
+export function updateConfig(config: Config, patch: ConfigPatch, providerId: (idOrAlias: string) => string | undefined): void {
+  const changes: Partial<Config> = {}
+  if (patch.defaultProvider !== undefined) {
+    const id = typeof patch.defaultProvider === 'string' ? providerId(patch.defaultProvider) : undefined
+    if (!id) throw new Error(`没有音源 “${String(patch.defaultProvider)}”`)
+    changes.defaultProvider = id
+  }
+  if (patch.volume !== undefined) changes.volume = wholeNumber(patch.volume, '启动音量', 0, 100)
+  if (patch.idleExitMinutes !== undefined) changes.idleExitMinutes = wholeNumber(patch.idleExitMinutes, '空闲退出时间', 0, 24 * 60)
+  if (patch.cookiesFile !== undefined) {
+    if (typeof patch.cookiesFile !== 'string') throw new Error('cookies 文件要写成路径')
+    // 资源管理器里“复制文件地址”会带上引号
+    changes.cookiesFile = patch.cookiesFile.trim().replace(/^"(.*)"$/, '$1')
+  }
+
+  Object.assign(config, changes)
+  let saved: Record<string, unknown>
+  try {
+    saved = JSON.parse(readFileSync(CONFIG_FILE, 'utf8')) as Record<string, unknown>
+  } catch {
+    // 文件不在或解析不了：按现在的配置重写一份
+    saved = { ...config }
+  }
+  writeFileSync(CONFIG_FILE, `${JSON.stringify({ ...saved, ...changes }, null, 2)}\n`)
+}
+
+function wholeNumber(value: unknown, what: string, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) throw new Error(`${what}要在 ${min}–${max} 之间`)
+  return Math.round(value)
 }

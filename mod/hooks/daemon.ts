@@ -1,5 +1,7 @@
 // 与 cc-music daemon 通信：找到它（~/.cc-music/daemon.json）、必要时拉起它、发 HTTP 请求。
 import type {
+  ConfigPatch,
+  ConfigResponse,
   CoverResponse,
   DaemonInfo,
   LibraryResponse,
@@ -151,7 +153,7 @@ export async function shutdown(host: Host): Promise<boolean> {
 }
 
 /** mod 需要的 daemon 版本；更旧的 daemon 没有歌词、封面、收藏接口，`/music restart` 换新。 */
-export const DAEMON_VERSION = '0.3.0'
+export const DAEMON_VERSION = '0.4.0'
 
 /** 正在运行的 daemon 的版本；没在运行时 undefined。 */
 export async function runningVersion(host: Host): Promise<string | undefined> {
@@ -172,4 +174,12 @@ export function library(host: Host): Promise<LibraryResponse> {
 
 export function setFavorite(host: Host, track: Track, favorite: boolean): Promise<LibraryResponse> {
   return call(host, 'POST', '/library/favorite', { track, favorite })
+}
+
+export function getConfig(host: Host): Promise<ConfigResponse> {
+  return call(host, 'GET', '/config')
+}
+
+export function setConfig(host: Host, patch: ConfigPatch): Promise<ConfigResponse> {
+  return call(host, 'POST', '/config', patch)
 }

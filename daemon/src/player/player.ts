@@ -1,4 +1,4 @@
-import { resolveTool, type Config } from '../config.ts'
+import { findMpv, findYtdlp, type Config } from '../config.ts'
 import { log } from '../log.ts'
 import type { PlayerCommand, PlayerSnapshot, PlayerStatus, RepeatMode, Track } from '../protocol.ts'
 import type { ProviderRegistry } from '../providers/index.ts'
@@ -243,17 +243,27 @@ export class Player {
     return this.starting
   }
 
+  /** cookies 等配置改了：正在运行的 mpv 立即换上新的 yt-dlp 参数，从下一次加载起生效。 */
+  async refreshYtdlOptions(): Promise<void> {
+    if (this.mpv?.isAlive) await this.mpv.command('set_property', 'ytdl-raw-options', this.ytdlRawOptions())
+  }
+
+  /** 交给 yt-dlp 的额外参数（mpv 的 ytdl-raw-options） */
+  private ytdlRawOptions(): Record<string, string> {
+    const options: Record<string, string> = {}
+    if (this.config.jsRuntime) options['js-runtimes'] = this.config.jsRuntime
+    if (this.config.cookiesFromBrowser) options['cookies-from-browser'] = this.config.cookiesFromBrowser
+    if (this.config.cookiesFile) options['cookies'] = this.config.cookiesFile
+    return options
+  }
+
   private async startMpv(): Promise<Mpv> {
-    const mpvPath = resolveTool(this.config.mpvPath, 'CC_MUSIC_MPV', 'mpv', 'apps/mpv/current/mpv.exe')
+    const mpvPath = findMpv(this.config)
     if (!mpvPath) throw new Error('找不到 mpv：请安装（scoop install mpv）或在 ~/.cc-music/config.json 里设置 mpvPath')
-    const ytdlpPath = resolveTool(this.config.ytdlpPath, 'CC_MUSIC_YTDLP', 'yt-dlp', 'shims/yt-dlp.exe')
+    const ytdlpPath = findYtdlp(this.config)
     if (!ytdlpPath) throw new Error('找不到 yt-dlp：请安装（scoop install yt-dlp）或在 ~/.cc-music/config.json 里设置 ytdlpPath')
 
-    const ytdlRawOptions: string[] = []
-    if (this.config.jsRuntime) ytdlRawOptions.push(`js-runtimes=${this.config.jsRuntime}`)
-    if (this.config.cookiesFromBrowser) ytdlRawOptions.push(`cookies-from-browser=${this.config.cookiesFromBrowser}`)
-    if (this.config.cookiesFile) ytdlRawOptions.push(`cookies=${this.config.cookiesFile}`)
-
+    const ytdlRawOptions = Object.entries(this.ytdlRawOptions()).map(([key, value]) => `${key}=${value}`)
     const mpv = await Mpv.start({ mpvPath, ytdlpPath, volume: this.volume, ytdlRawOptions })
     mpv.on('property', (name, value) => this.onProperty(name, value))
     mpv.on('event', event => this.onEvent(event))

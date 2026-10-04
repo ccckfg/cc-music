@@ -7,11 +7,16 @@ import { YouTubeMusicProvider } from './ytmusic.ts'
 /** 所有音源的登记处：按 id 或别名查找，决定默认音源。 */
 export class ProviderRegistry {
   private readonly providers: MusicProvider[]
-  private readonly defaultId: string
+  private readonly config: Config
 
   constructor(config: Config) {
+    this.config = config
     this.providers = [new BilibiliProvider(), new YouTubeMusicProvider(config)]
-    this.defaultId = this.find(config.defaultProvider)?.id ?? this.providers[0]?.id ?? ''
+  }
+
+  /** 默认音源跟着配置走：设置页改了立即生效 */
+  private get defaultId(): string {
+    return this.find(this.config.defaultProvider)?.id ?? this.providers[0]?.id ?? ''
   }
 
   /** 按 id 或别名找音源，大小写不敏感。 */

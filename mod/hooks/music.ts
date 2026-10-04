@@ -1,5 +1,5 @@
 // 播放器的各个动作：/music 命令和给模型的 music 工具都调用这里。
-import type { LibraryResponse, LyricsState, PlayerCommand, PlayerSnapshot, RepeatMode, Track } from '../types'
+import type { ConfigPatch, LibraryResponse, LyricsState, PlayerCommand, PlayerSnapshot, Prefs, RepeatMode, Track } from '../types'
 import * as daemon from './daemon.ts'
 import {
   describeLyrics,
@@ -46,7 +46,6 @@ export async function searchTracks(host: Host, text: string, limit = SEARCH_LIMI
 
 /** 立即播放：插到当前曲目之后并切过去，原来的队列保留。 */
 export async function playNow(host: Host, tracks: Track[]): Promise<PlayerSnapshot> {
-  await host.setBandHidden(false)
   return send(host, { type: 'enqueue', tracks, next: true, play: true })
 }
 
@@ -104,7 +103,7 @@ export async function loadLyrics(host: Host, track: Track): Promise<LyricsState>
 }
 
 /**
- * 当前曲目变了时取歌词、刷新播放历史；面板开着时再取封面。轮询每秒调用。
+ * 当前曲目变了时取歌词、刷新播放历史；面板开着且没关掉封面时再取封面。轮询每秒调用。
  * 旧版 daemon 没有这些接口，跳过。
  */
 export async function syncTrackExtras(host: Host, player: PlayerSnapshot | null): Promise<void> {
@@ -119,7 +118,8 @@ export async function syncTrackExtras(host: Host, player: PlayerSnapshot | null)
     void loadLyrics(host, track)
   }
 
-  if (coverKey !== key && (await host.isPaneOpen()) && (await host.getCover())?.key !== key) {
+  const wantsCover = (await host.isPaneOpen()) && (await host.getPrefs()).showCover
+  if (coverKey !== key && wantsCover && (await host.getCover())?.key !== key) {
     coverKey = key
     daemon
       .cover(host, track)
@@ -132,7 +132,7 @@ export async function syncTrackExtras(host: Host, player: PlayerSnapshot | null)
 }
 
 /** 换新版 daemon：记下队列和进度，关掉旧的，拉起新的，再接着放。 */
-async function restart(host: Host): Promise<string> {
+export async function restart(host: Host): Promise<string> {
   const before = await daemon.peekState(host)
   await daemon.shutdown(host)
   await host.setPlayer(null)
@@ -217,7 +217,7 @@ export async function runMusic(host: Host, args: string): Promise<MusicReply> {
   })
   const verb = (args.trim().split(/\s+/)[0] ?? '').toLowerCase()
   if (PANE_VERBS.has(verb)) return { text, pane: 'open' }
-  return isPlayNow ? { text, pane: 'sidebar' } : { text }
+  return isPlayNow && (await host.getPrefs()).autoOpenSidebar ? { text, pane: 'sidebar' } : { text }
 }
 
 async function runMusicText(host: Host, args: string, onPlayNow: () => void): Promise<string> {
@@ -265,11 +265,11 @@ async function runMusicText(host: Host, args: string, onPlayNow: () => void): Pr
     case 'rm':
       return describeQueue(await send(host, { type: 'remove', index: parseIndex(rest, '移除') - 1 }))
     case 'show':
-      await host.setBandHidden(false)
+      await host.setPrefs({ showMiniPlayer: true })
       return '迷你播放器已显示。'
     case 'hide':
-      await host.setBandHidden(true)
-      return '迷你播放器已隐藏，用 `/music show` 恢复。'
+      await host.setPrefs({ showMiniPlayer: false })
+      return '迷你播放器已隐藏，用 `/music show` 或面板的设置页恢复。'
     case 'lyrics':
     case 'lrc':
     case '歌词': {
@@ -410,5 +410,38 @@ export async function runTool(host: Host, input: ToolInput): Promise<string> {
     }
     default:
       throw new Error(`不认识的 action：${action}`)
+  }
+}
+
+/** 偏好的默认值：都开着 */
+export const DEFAULT_PREFS: Prefs = { showMiniPlayer: true, autoOpenSidebar: true, showCover: true }
+
+/** 从 $.store 读回来的偏好：只认识的、类型对的项，其余用默认值。 */
+export function parsePrefs(value: unknown): Prefs {
+  const prefs = { ...DEFAULT_PREFS }
+  if (typeof value !== 'object' || value === null) return prefs
+  for (const key of Object.keys(DEFAULT_PREFS) as (keyof Prefs)[]) {
+    const stored = (value as Record<string, unknown>)[key]
+    if (typeof stored === 'boolean') prefs[key] = stored
+  }
+  return prefs
+}
+
+/** 打开设置页：从 daemon 读配置（没在运行就拉起来）。 */
+export async function loadSettings(host: Host): Promise<void> {
+  try {
+    await host.setSettings({ config: await daemon.getConfig(host), error: null })
+  } catch (error) {
+    await host.setSettings({ config: null, error: errorText(error) })
+  }
+}
+
+/** 设置页改 daemon 的配置；失败时保留原来的值，把原因显示在设置页上。 */
+export async function changeSettings(host: Host, patch: ConfigPatch): Promise<void> {
+  try {
+    await host.setSettings({ config: await daemon.setConfig(host, patch), error: null })
+  } catch (error) {
+    const previous = await host.getSettings()
+    await host.setSettings({ config: previous?.config ?? null, error: errorText(error) })
   }
 }

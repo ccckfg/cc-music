@@ -122,6 +122,32 @@ export type LyricsResponse = {
 
 export type LyricsRequest = { track: Track };
 
+/** 设置页能改的配置项（~/.cc-music/config.json 的一部分） */
+export type DaemonSettings = {
+  /** 不带前缀搜索时用的音源 id */
+  defaultProvider: string;
+  /** daemon 启动时的音量 0–100 */
+  volume: number;
+  /** 交给 yt-dlp 的 cookies 文件（Netscape 格式），空字符串表示不用 */
+  cookiesFile: string;
+  /** 没在播放、也没有请求多少分钟后自动退出，0 表示不退出 */
+  idleExitMinutes: number;
+};
+
+/** `POST /config` 的请求：只带要改的项 */
+export type ConfigPatch = Partial<DaemonSettings>;
+
+/** `GET /config`、`POST /config` 的回复 */
+export type ConfigResponse = {
+  settings: DaemonSettings;
+  /** config.json 的位置 */
+  configFile: string;
+  /** 配置了 cookies 文件且文件存在 */
+  hasCookiesFile: boolean;
+  /** 找到的外部工具，找不到为 null */
+  tools: { mpv: string | null; ytdlp: string | null; ffmpeg: string | null };
+};
+
 export type CoverRequest = { track: Track };
 
 /** `POST /cover` 的回复：保持原图比例、长边不超过 256 的 RGB 像素。没有封面时 pixels 为 null、宽高为 0。 */

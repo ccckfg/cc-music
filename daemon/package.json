@@ -1,6 +1,6 @@
 {
   "name": "cc-music-daemon",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "cc-music 后台进程：管理 mpv、播放队列和音源",

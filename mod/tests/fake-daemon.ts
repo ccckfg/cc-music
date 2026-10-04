@@ -1,7 +1,7 @@
 import type { On, RenderElement } from 'claude-code'
 import { expect, mock } from 'claude-code/testing'
 
-import type { LibraryResponse, PlayerCommand, PlayerSnapshot, Track } from '../types'
+import type { ConfigPatch, ConfigResponse, LibraryResponse, PlayerCommand, PlayerSnapshot, Track } from '../types'
 import { DAEMON_VERSION } from '../hooks/daemon.ts'
 
 export const SUNNY: Track = {
@@ -67,6 +67,10 @@ export type FakeDaemon = {
   opened: { id: string; columns: number | undefined; focus: boolean }[];
   library: LibraryResponse;
   clock: ReturnType<typeof mock.clock>;
+  /** 设置页发给 daemon 的配置补丁 */
+  configPatches: ConfigPatch[];
+  /** 插件的 $.store */
+  store: Map<string, unknown>;
 }
 
 /** 一个假的 daemon：桩住会话、env、fs、http，记下 mod 发来的命令，按命令更新状态。 */
@@ -75,6 +79,10 @@ export type FakeOptions = {
   version?: string;
   /** 模拟 cc-music 下面的插件（如 crush-style）在输入框上方画的一行 */
   bandBelow?: string;
+  /** 会话开始前 $.store 里已有的内容（上一次会话存下的） */
+  store?: Record<string, unknown>;
+  /** 让 POST /config 失败，返回这个原因 */
+  configError?: string;
 }
 
 export function fakeDaemon(on: On, options: FakeOptions = {}): FakeDaemon {
@@ -82,6 +90,19 @@ export function fakeDaemon(on: On, options: FakeOptions = {}): FakeDaemon {
   const toasts: string[] = []
   const opened: FakeDaemon['opened'] = []
   const library: LibraryResponse = { favorites: [], history: [] }
+  const store = new Map(Object.entries(options.store ?? {}))
+  on('store.get', (_$, e) => ({ value: store.get(e.key) }))
+  on('store.set', (_$, e) => {
+    store.set(e.key, e.value)
+    return { value: undefined }
+  })
+  const configPatches: ConfigPatch[] = []
+  let config: ConfigResponse = {
+    settings: { defaultProvider: 'bilibili', volume: 60, cookiesFile: '', idleExitMinutes: 30 },
+    configFile: 'C:/Users/me/.cc-music/config.json',
+    hasCookiesFile: false,
+    tools: { mpv: 'C:/scoop/mpv.exe', ytdlp: 'C:/scoop/yt-dlp.exe', ffmpeg: null },
+  }
   on('ui.open', (_$, e) => {
     opened.push({ id: e.id, columns: e.columns, focus: e.focus === true })
     return { value: { isPlaced: true } }
@@ -144,6 +165,19 @@ export function fakeDaemon(on: On, options: FakeOptions = {}): FakeDaemon {
       case '/library':
         answer = library
         break
+      case '/config':
+        if (e.init?.method === 'POST') {
+          const patch = body as ConfigPatch
+          configPatches.push(patch)
+          if (options.configError) {
+            return { value: { status: 400, ok: false, headers: {}, text: JSON.stringify({ error: options.configError }) } }
+          }
+          const settings = { ...config.settings, ...patch }
+          // 假装只有以 cookies.txt 结尾的文件存在
+          config = { ...config, settings, hasCookiesFile: settings.cookiesFile.endsWith('cookies.txt') }
+        }
+        answer = config
+        break
       case '/library/favorite': {
         const track = body['track'] as Track
         library.favorites = library.favorites.filter(t => t.id !== track.id)
@@ -173,5 +207,5 @@ export function fakeDaemon(on: On, options: FakeOptions = {}): FakeDaemon {
     }
     return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify(answer) } }
   })
-  return { commands, searches, toasts, opened, library, clock }
+  return { commands, searches, toasts, opened, library, clock, configPatches, store }
 }

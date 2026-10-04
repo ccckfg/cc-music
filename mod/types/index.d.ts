@@ -83,6 +83,32 @@ export type LyricsResponse = {
   source: string | null;
 };
 
+/** 设置页能改的 daemon 配置项（~/.cc-music/config.json 的一部分） */
+export type DaemonSettings = {
+  /** 不带前缀搜索时用的音源 id */
+  defaultProvider: string;
+  /** daemon 启动时的音量 0–100 */
+  volume: number;
+  /** 交给 yt-dlp 的 cookies 文件（Netscape 格式），空字符串表示不用 */
+  cookiesFile: string;
+  /** 没在播放、也没有请求多少分钟后自动退出，0 表示不退出 */
+  idleExitMinutes: number;
+};
+
+/** `POST /config` 的请求：只带要改的项 */
+export type ConfigPatch = Partial<DaemonSettings>;
+
+/** `GET /config`、`POST /config` 的回复 */
+export type ConfigResponse = {
+  settings: DaemonSettings;
+  /** config.json 的位置 */
+  configFile: string;
+  /** 配置了 cookies 文件且文件存在 */
+  hasCookiesFile: boolean;
+  /** 找到的外部工具，找不到为 null */
+  tools: { mpv: string | null; ytdlp: string | null; ffmpeg: string | null };
+};
+
 /** `POST /cover` 的回复：保持原图比例、长边不超过 256 的 RGB 像素。没有封面时 pixels 为 null、宽高为 0。 */
 export type CoverResponse = {
   key: string;
@@ -113,7 +139,23 @@ export type LastSearch = {
 };
 
 /** 面板的标签页 */
-export type PaneTab = 'now' | 'search' | 'queue' | 'favorites' | 'history';
+export type PaneTab = 'now' | 'search' | 'queue' | 'favorites' | 'history' | 'settings';
+
+/** mod 这边的偏好，存在 $.store 里，跨会话保留 */
+export type Prefs = {
+  /** 输入框上方显示迷你播放器 */
+  showMiniPlayer: boolean;
+  /** 开始放歌时自动打开侧边栏（只在能停靠时） */
+  autoOpenSidebar: boolean;
+  /** 面板里显示封面 */
+  showCover: boolean;
+};
+
+/** 设置页从 daemon 读到的配置；config 为 null 时还没读到，error 是读取或保存失败的原因 */
+export type SettingsState = {
+  config: ConfigResponse | null;
+  error: string | null;
+};
 
 /** 面板搜索框的状态 */
 export type SearchState = {
@@ -131,8 +173,7 @@ declare module 'claude-code' {
       /** daemon 报告的播放器状态；daemon 没在运行时为 null */
       player: PlayerSnapshot | null;
       lastSearch: LastSearch | null;
-      /** 迷你播放器是否被用户隐藏 */
-      isBandHidden: boolean;
+      prefs: Prefs;
       isPaneOpen: boolean;
       paneTab: PaneTab;
       search: SearchState;
@@ -141,6 +182,8 @@ declare module 'claude-code' {
       library: LibraryResponse | null;
       /** 正在运行的 daemon 的版本；没在运行时为 null */
       daemonVersion: string | null;
+      /** 设置页的内容；还没打开过设置页时为 null */
+      settings: SettingsState | null;
     };
   }
 }

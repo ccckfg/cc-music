@@ -9,9 +9,14 @@ import { trackLabel } from './format.ts'
 import { errorText, type Host } from './host.ts'
 import {
   afterPaneOpened,
+  changeSettings,
+  DEFAULT_PREFS,
   enqueue,
+  loadSettings,
+  parsePrefs,
   playNow,
   refreshLibrary,
+  restart,
   runMusic,
   runTool,
   searchTracks,
@@ -25,7 +30,7 @@ import { MiniPlayer, PaneView, type PaneActions } from './view.tsx'
 // $.state 里的值：热重载后仍在，画面从这里读。引擎要求它们在使用它们的文件里声明
 const playerAtom = atom({ plugin: 'cc-music', key: 'player' } as const, null)
 const lastSearchAtom = atom({ plugin: 'cc-music', key: 'lastSearch' } as const, null)
-const bandHiddenAtom = atom({ plugin: 'cc-music', key: 'isBandHidden' } as const, false)
+const prefsAtom = atom({ plugin: 'cc-music', key: 'prefs' } as const, DEFAULT_PREFS)
 const paneOpenAtom = atom({ plugin: 'cc-music', key: 'isPaneOpen' } as const, false)
 const paneTabAtom = atom({ plugin: 'cc-music', key: 'paneTab' } as const, 'now')
 const searchAtom = atom({ plugin: 'cc-music', key: 'search' } as const, { query: '', isSearching: false, error: null })
@@ -33,6 +38,10 @@ const lyricsAtom = atom({ plugin: 'cc-music', key: 'lyrics' } as const, null)
 const coverAtom = atom({ plugin: 'cc-music', key: 'cover' } as const, null)
 const libraryAtom = atom({ plugin: 'cc-music', key: 'library' } as const, null)
 const daemonVersionAtom = atom({ plugin: 'cc-music', key: 'daemonVersion' } as const, null)
+const settingsAtom = atom({ plugin: 'cc-music', key: 'settings' } as const, null)
+
+/** $.store 里存偏好的键 */
+const PREFS_KEY = 'prefs'
 
 const COMMAND = 'music'
 const TOOL = 'music'
@@ -149,6 +158,14 @@ const paneActions: PaneActions = {
       h.toast(`已加入队列（第 ${player.queue.length} 首）：${trackLabel(track)}`)
     }),
   toggleFavorite: (track: Track) => void act(async h => h.toast(await toggleFavorite(h, track))),
+  changeSettings: patch => void act(h => changeSettings(h, patch)),
+  changePrefs: patch => void act(h => h.setPrefs(patch)),
+  restartDaemon: () =>
+    void act(async h => {
+      h.toast('正在重启后台播放器…')
+      h.toast(await restart(h))
+      await loadSettings(h)
+    }),
 }
 
 /** 告诉用户面板摆在了哪、怎样才能变成侧边栏。 */
@@ -161,6 +178,7 @@ function placementNote(isFullscreen: boolean, columns: number): string {
 async function switchTab(host: Host, tab: PaneTab): Promise<void> {
   await host.setPaneTab(tab)
   if (tab === 'favorites' || tab === 'history') await refreshLibrary(host)
+  if (tab === 'settings') await loadSettings(host)
 }
 
 export const register: Register = on => {
@@ -200,7 +218,14 @@ export const register: Register = on => {
       setPlayer: player => update($, playerAtom, () => player).then(() => undefined),
       getLastSearch: () => read($, lastSearchAtom),
       setLastSearch: search => update($, lastSearchAtom, () => search).then(() => undefined),
-      setBandHidden: isHidden => update($, bandHiddenAtom, () => isHidden).then(() => undefined),
+      getPrefs: () => read($, prefsAtom),
+      setPrefs: async patch => {
+        const prefs = { ...(await read($, prefsAtom)), ...patch }
+        await update($, prefsAtom, () => prefs)
+        await $.store.set(PREFS_KEY, prefs)
+      },
+      getSettings: () => read($, settingsAtom),
+      setSettings: settings => update($, settingsAtom, () => settings).then(() => undefined),
       isPaneOpen: () => read($, paneOpenAtom),
       setPaneOpen: isOpen => update($, paneOpenAtom, () => isOpen).then(() => undefined),
       setPaneTab: tab => update($, paneTabAtom, () => tab).then(() => undefined),
@@ -217,6 +242,10 @@ export const register: Register = on => {
       toast: (text, timeoutMs) => $.ui.toast(text, timeoutMs === undefined ? undefined : { timeoutMs }),
       debug: text => $.ui.log(`cc-music: ${text}`, { to: 'debug' }),
     }
+
+    // 偏好存在 $.store 里，跨会话保留；读不到就用默认值
+    const stored = await $.store.get(PREFS_KEY).catch(() => undefined)
+    await update($, prefsAtom, () => parsePrefs(stored))
 
     await $.command.register({
       name: COMMAND,
@@ -311,6 +340,8 @@ export const register: Register = on => {
         library: await read($, libraryAtom),
         lastSearch: await read($, lastSearchAtom),
         search: await read($, searchAtom),
+        prefs: await read($, prefsAtom),
+        settings: await read($, settingsAtom),
         outdatedDaemon: daemonVersion && daemonVersion !== daemon.DAEMON_VERSION ? daemonVersion : undefined,
       },
       paneActions,
@@ -320,9 +351,9 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
     const player = await read($, playerAtom)
-    const isHidden = await read($, bandHiddenAtom)
+    const prefs = await read($, prefsAtom)
     const track = player?.current
-    if (isHidden || !player || !track || player.status === 'idle') return next(e)
+    if (!prefs.showMiniPlayer || !player || !track || player.status === 'idle') return next(e)
 
     const below = await next(e)
     const { Box, Button, Text } = $.ui.resolve(e)

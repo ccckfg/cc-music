@@ -11,6 +11,8 @@ import type {
 } from 'claude-code'
 
 import type {
+  ConfigPatch,
+  ConfigResponse,
   CoverResponse,
   LastSearch,
   LibraryResponse,
@@ -18,7 +20,9 @@ import type {
   PaneTab,
   PlayerCommand,
   PlayerSnapshot,
+  Prefs,
   SearchState,
+  SettingsState,
   Track,
 } from '../types'
 import { coverCells } from './cover.ts'
@@ -50,6 +54,9 @@ export type PaneModel = {
   rows: number;
   /** daemon 是旧版本时它的版本号，面板提示用户 /music restart */
   outdatedDaemon: string | undefined;
+  prefs: Prefs;
+  /** 设置页从 daemon 读到的配置；还没打开过设置页时为 null */
+  settings: SettingsState | null;
 }
 
 export type PaneActions = {
@@ -59,6 +66,9 @@ export type PaneActions = {
   play: (track: Track) => void;
   enqueue: (track: Track) => void;
   toggleFavorite: (track: Track) => void;
+  changeSettings: (patch: ConfigPatch) => void;
+  changePrefs: (patch: Partial<Prefs>) => void;
+  restartDaemon: () => void;
 }
 
 const TABS: { id: PaneTab; label: string }[] = [
@@ -68,6 +78,7 @@ const TABS: { id: PaneTab; label: string }[] = [
   { id: 'favorites', label: '收藏' },
   { id: 'history', label: '历史' },
 ]
+/** 标签之间的空格；侧边栏太窄放不下时缩成 1 */
 const TAB_GAP = 2
 
 const STATUS: Record<PlayerSnapshot['status'], { text: string; color: string }> = {
@@ -106,7 +117,7 @@ export function PaneView(kit: Kit, model: PaneModel, actions: PaneActions): Rend
   const width = Math.max(20, model.columns)
   return (
     <Box flexDirection="column" width={width}>
-      {Header(kit, model.player)}
+      {Header(kit, model.player, model.tab, actions)}
       {TabBar(kit, model.tab, width, actions)}
       {model.outdatedDaemon ? (
         <Box marginTop={1}>
@@ -121,26 +132,31 @@ export function PaneView(kit: Kit, model: PaneModel, actions: PaneActions): Rend
         {model.tab === 'queue' ? QueueTab(kit, model, width, actions) : null}
         {model.tab === 'favorites' ? FavoritesTab(kit, model, width, actions) : null}
         {model.tab === 'history' ? HistoryTab(kit, model, width, actions) : null}
+        {model.tab === 'settings' ? SettingsTab(kit, model, width, actions) : null}
       </Box>
     </Box>
   )
 }
 
-/** 第一行：♪ cc-music，右边是播放状态。 */
-function Header(kit: Kit, player: PlayerSnapshot | null): RenderElement {
-  const { Box, Text } = kit
+/** 第一行：♪ cc-music，右边是播放状态和「设置」（再按一次回到正在播放）。 */
+function Header(kit: Kit, player: PlayerSnapshot | null, tab: PaneTab, actions: PaneActions): RenderElement {
+  const { Box, Text, Button } = kit
   const status = player?.current ? STATUS[player.status] : undefined
+  const isSettings = tab === 'settings'
   return (
     <Box flexDirection="row" justifyContent="space-between">
       <Text color={C.accent} bold>
         ♪ cc-music
       </Text>
-      {status ? (
-        <Box flexDirection="row">
-          <Text color={status.color}>● </Text>
-          <Text color={C.dim}>{status.text}</Text>
-        </Box>
-      ) : null}
+      <Box flexDirection="row" columnGap={2}>
+        {status ? (
+          <Box flexDirection="row">
+            <Text color={status.color}>● </Text>
+            <Text color={C.dim}>{status.text}</Text>
+          </Box>
+        ) : null}
+        <Button key="tab-settings" label="设置" plain dimColor={!isSettings} onPress={() => actions.setTab(isSettings ? 'now' : 'settings')} />
+      </Box>
     </Box>
   )
 }
@@ -148,10 +164,12 @@ function Header(kit: Kit, player: PlayerSnapshot | null): RenderElement {
 /** 标签行：不带方括号的文字，下面一条线，当前那一段是 Claude 橙的粗线。 */
 function TabBar(kit: Kit, active: PaneTab, width: number, actions: PaneActions): RenderElement {
   const { Box, Text, Button } = kit
-  const used = TABS.reduce((sum, tab) => sum + cellWidth(tab.label), 0) + TAB_GAP * (TABS.length - 1)
+  const labels = TABS.reduce((sum, tab) => sum + cellWidth(tab.label), 0)
+  const gap = labels + TAB_GAP * (TABS.length - 1) <= width ? TAB_GAP : 1
+  const used = labels + gap * (TABS.length - 1)
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Box flexDirection="row" columnGap={TAB_GAP}>
+      <Box flexDirection="row" columnGap={gap}>
         {TABS.map(tab => (
           <Button key={`tab-${tab.id}`} label={tab.label} plain dimColor={tab.id !== active} onPress={() => actions.setTab(tab.id)} />
         ))}
@@ -160,7 +178,7 @@ function TabBar(kit: Kit, active: PaneTab, width: number, actions: PaneActions):
         {TABS.map((tab, i) => (
           <Box flexDirection="row">
             <Text color={tab.id === active ? C.accent : C.border}>{(tab.id === active ? '━' : '─').repeat(cellWidth(tab.label))}</Text>
-            {i < TABS.length - 1 ? <Text color={C.border}>{'─'.repeat(TAB_GAP)}</Text> : null}
+            {i < TABS.length - 1 ? <Text color={C.border}>{'─'.repeat(gap)}</Text> : null}
           </Box>
         ))}
         <Text color={C.border}>{'─'.repeat(Math.max(0, width - used))}</Text>
@@ -182,7 +200,7 @@ function NowTab(kit: Kit, model: PaneModel, width: number, actions: PaneActions)
     // 封面尽量大：宽度用满，高度给歌词留够行数
     const coverRows = model.rows - SIDEBAR_CHROME_ROWS - titleLines.length - MIN_LYRIC_ROWS
     const coverColumns = even(clamp(Math.min(width, coverRows * 2), COVER_MIN, COVER_MAX))
-    const cover = CoverArt(kit, model.cover, track, coverColumns)
+    const cover = model.prefs.showCover ? CoverArt(kit, model.cover, track, coverColumns) : null
     const chromeRows = SIDEBAR_CHROME_ROWS + (cover ? coverColumns / 2 : 0) + titleLines.length
     const lyricRows = model.isDocked ? Math.max(MIN_LYRIC_ROWS, model.rows - chromeRows) : INLINE_LYRIC_ROWS
     return (
@@ -206,7 +224,7 @@ function NowTab(kit: Kit, model: PaneModel, width: number, actions: PaneActions)
   }
 
   // 输入框上方：封面在左，信息和控制在右，歌词在下
-  const cover = CoverArt(kit, model.cover, track, INLINE_COVER)
+  const cover = model.prefs.showCover ? CoverArt(kit, model.cover, track, INLINE_COVER) : null
   const infoWidth = width - (cover ? INLINE_COVER + 2 : 0)
   return (
     <Box flexDirection="column" width={width}>
@@ -613,6 +631,205 @@ function HistoryTab(kit: Kit, model: PaneModel, width: number, actions: PaneActi
           timeAgo(entry.playedAt),
         ),
       )}
+    </Box>
+  )
+}
+
+/** 设置页的一个控件和它的宽度：放得下时和名字排在一行 */
+type Control = { element: RenderElement; width: number }
+
+type Choice<T> = { value: T; label: string }
+
+const ON_OFF: Choice<boolean>[] = [
+  { value: true, label: '开' },
+  { value: false, label: '关' },
+]
+
+const PROVIDER_CHOICES: Choice<string>[] = Object.entries(PROVIDER_NAME).map(([value, label]) => ({ value, label }))
+
+/** 空闲自动退出的选项（分钟，0 是不退出） */
+const IDLE_CHOICES = [10, 30, 60, 0]
+
+/**
+ * 设置页。「播放」「YouTube Music」「后台播放器」改的是 daemon 的 config.json，
+ * 「界面」是面板自己的偏好，存在 $.store 里。侧边栏窄：一项放不下一行时，名字一行、选项一行。
+ */
+function SettingsTab(kit: Kit, model: PaneModel, width: number, actions: PaneActions): RenderElement {
+  const { Box, Text, Button } = kit
+  const prefs = model.prefs
+  const state = model.settings
+  const config = state?.config ?? null
+  const daemonNote = !state || (!config && !state.error) ? (
+    <Text color={C.dim}>正在读取后台播放器的设置…</Text>
+  ) : !config ? (
+    <Text color={C.error} wrap="wrap">
+      读不到设置：{state.error}
+    </Text>
+  ) : null
+
+  return (
+    <Box flexDirection="column" width={width}>
+      {config && state?.error ? (
+        <Box marginBottom={1}>
+          <Text color={C.error} wrap="wrap">
+            {state.error}
+          </Text>
+        </Box>
+      ) : null}
+      {Section(kit, '播放', [
+        daemonNote,
+        config
+          ? Setting(kit, width, '默认音源', ChoiceRow(kit, 'provider', PROVIDER_CHOICES, config.settings.defaultProvider, value => actions.changeSettings({ defaultProvider: value })))
+          : null,
+        config ? Setting(kit, width, '启动音量', VolumeStepper(kit, config.settings.volume, actions)) : null,
+      ])}
+      {Section(kit, '界面', [
+        Setting(kit, width, '迷你播放器', ChoiceRow(kit, 'mini-player', ON_OFF, prefs.showMiniPlayer, value => actions.changePrefs({ showMiniPlayer: value }))),
+        Setting(kit, width, '放歌时打开侧边栏', ChoiceRow(kit, 'auto-sidebar', ON_OFF, prefs.autoOpenSidebar, value => actions.changePrefs({ autoOpenSidebar: value }))),
+        Setting(kit, width, '封面', ChoiceRow(kit, 'cover', ON_OFF, prefs.showCover, value => actions.changePrefs({ showCover: value }))),
+      ])}
+      {config ? Section(kit, 'YouTube Music', [Cookies(kit, config, width, actions)]) : null}
+      {Section(kit, '后台播放器', [
+        config
+          ? Setting(kit, width, '空闲自动退出', ChoiceRow(kit, 'idle', idleChoices(config.settings.idleExitMinutes), config.settings.idleExitMinutes, value => actions.changeSettings({ idleExitMinutes: value })))
+          : null,
+        config ? Tools(kit, config) : null,
+        <Button key="restart-daemon" label="重启后台播放器" plain onPress={actions.restartDaemon} />,
+        config ? (
+          <Text color={C.faint} wrap="truncate-middle">
+            {config.configFile}
+          </Text>
+        ) : null,
+      ])}
+    </Box>
+  )
+}
+
+function Section(kit: Kit, title: string, children: (RenderElement | null)[]): RenderElement {
+  const { Box, Text } = kit
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text bold>{title}</Text>
+      {children}
+    </Box>
+  )
+}
+
+function Setting(kit: Kit, width: number, label: string, control: Control): RenderElement {
+  const { Box, Text } = kit
+  if (cellWidth(label) + 2 + control.width <= width) {
+    return (
+      <Box flexDirection="row" justifyContent="space-between" width={width}>
+        <Text color={C.dim}>{label}</Text>
+        {control.element}
+      </Box>
+    )
+  }
+  return (
+    <Box flexDirection="column" width={width}>
+      <Text color={C.dim}>{label}</Text>
+      <Box paddingLeft={2}>{control.element}</Box>
+    </Box>
+  )
+}
+
+/** 一组选项：选中的那个是 Claude 橙的字，其余是淡色按钮（和标签行一样）。按钮的 key 是 `<key>-<值>` */
+function ChoiceRow<T>(kit: Kit, key: string, choices: Choice<T>[], current: T, onChange: (value: T) => void): Control {
+  const { Box, Text, Button } = kit
+  const gap = 2
+  return {
+    width: choices.reduce((sum, choice) => sum + cellWidth(choice.label), 0) + gap * (choices.length - 1),
+    element: (
+      <Box flexDirection="row" columnGap={gap}>
+        {choices.map(choice =>
+          choice.value === current ? (
+            <Text color={C.accent} bold>
+              {choice.label}
+            </Text>
+          ) : (
+            <Button key={`${key}-${String(choice.value)}`} label={choice.label} plain dimColor onPress={() => onChange(choice.value)} />
+          ),
+        )}
+      </Box>
+    ),
+  }
+}
+
+function VolumeStepper(kit: Kit, volume: number, actions: PaneActions): Control {
+  const { Box, Text, Button } = kit
+  return {
+    width: 7,
+    element: (
+      <Box flexDirection="row" columnGap={1}>
+        <Button key="startup-vol-down" label="−" plain onPress={() => actions.changeSettings({ volume: Math.max(0, volume - 10) })} />
+        <Text>{String(volume).padStart(3)}</Text>
+        <Button key="startup-vol-up" label="+" plain onPress={() => actions.changeSettings({ volume: Math.min(100, volume + 10) })} />
+      </Box>
+    ),
+  }
+}
+
+/** 空闲退出的选项；配置里是别的分钟数时也列出来，选中它 */
+function idleChoices(current: number): Choice<number>[] {
+  const values = IDLE_CHOICES.includes(current) ? IDLE_CHOICES : [...IDLE_CHOICES.filter(n => n !== 0), current, 0].sort((a, b) => (a === 0 ? 1 : b === 0 ? -1 : a - b))
+  return values.map(value => ({ value, label: value === 0 ? '不退出' : `${value}分` }))
+}
+
+/** cookies 文件：YouTube 拦截播放时要用 */
+function Cookies(kit: Kit, config: ConfigResponse, width: number, actions: PaneActions): RenderElement {
+  const { Box, Text, Input } = kit
+  const path = config.settings.cookiesFile
+  const status = !path
+    ? { color: C.warning, text: '没有配置：YouTube 多半会拦截播放' }
+    : config.hasCookiesFile
+      ? { color: C.success, text: '✓ 已配置' }
+      : { color: C.error, text: '✗ 找不到这个文件' }
+  return (
+    <Box flexDirection="column" width={width}>
+      <Text color={C.dim}>cookies 文件</Text>
+      {Input ? (
+        <Box borderStyle="round" borderColor={C.border} paddingX={1}>
+          <Input key="cookies" placeholder="cookies.txt 的完整路径" value={path} submitLabel="保存" onSubmit={text => actions.changeSettings({ cookiesFile: text })} />
+        </Box>
+      ) : (
+        <Text wrap="truncate-middle">{path || '（未设置）'}</Text>
+      )}
+      <Text color={status.color} wrap="wrap">
+        {status.text}
+      </Text>
+      {config.hasCookiesFile ? null : (
+        <Text color={C.faint} wrap="wrap">
+          在登录了 YouTube 的浏览器里，用扩展（如 Get cookies.txt LOCALLY）导出，填完整路径后回车
+        </Text>
+      )}
+    </Box>
+  )
+}
+
+/** 找没找到 mpv、yt-dlp、ffmpeg */
+function Tools(kit: Kit, config: ConfigResponse): RenderElement {
+  const { Box, Text } = kit
+  const tools: [string, string | null][] = [
+    ['mpv', config.tools.mpv],
+    ['yt-dlp', config.tools.ytdlp],
+    ['ffmpeg', config.tools.ffmpeg],
+  ]
+  const isMissing = tools.some(([, path]) => !path)
+  return (
+    <Box flexDirection="column">
+      <Box flexDirection="row" columnGap={2}>
+        {tools.map(([name, path]) => (
+          <Box flexDirection="row">
+            <Text color={C.dim}>{name} </Text>
+            <Text color={path ? C.success : C.error}>{path ? '✓' : '✗'}</Text>
+          </Box>
+        ))}
+      </Box>
+      {isMissing ? (
+        <Text color={C.faint} wrap="wrap">
+          找不到的用 scoop 安装，或在下面的配置文件里写路径
+        </Text>
+      ) : null}
     </Box>
   )
 }

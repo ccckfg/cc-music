@@ -10,7 +10,9 @@ import type {
   LyricsState,
   PaneTab,
   PlayerSnapshot,
+  Prefs,
   SearchState,
+  SettingsState,
 } from '../types'
 
 export type HostResponse = { status: number; ok: boolean; text: string }
@@ -32,7 +34,11 @@ export type Host = {
   setPlayer: (player: PlayerSnapshot | null) => Promise<void>;
   getLastSearch: () => Promise<LastSearch | null>;
   setLastSearch: (search: LastSearch) => Promise<void>;
-  setBandHidden: (isHidden: boolean) => Promise<void>;
+  getPrefs: () => Promise<Prefs>;
+  /** 改几项偏好，同时存进 $.store，下次会话还在 */
+  setPrefs: (patch: Partial<Prefs>) => Promise<void>;
+  getSettings: () => Promise<SettingsState | null>;
+  setSettings: (settings: SettingsState) => Promise<void>;
   isPaneOpen: () => Promise<boolean>;
   setPaneOpen: (isOpen: boolean) => Promise<void>;
   setPaneTab: (tab: PaneTab) => Promise<void>;

@@ -4,7 +4,7 @@
 
 - `/music 晴天` 搜索并播放，`/music next`、`/music vol 40` 等控制
 - 输入框上方的迷你播放器：曲名、进度、上一首 / 暂停 / 下一首 / 面板按钮
-- `/music` 打开面板：封面字符画、滚动歌词、搜索、队列、收藏、播放历史；全屏布局下停靠在右侧成侧边栏
+- `/music` 打开面板：封面字符画、滚动歌词、搜索、队列、收藏、播放历史和设置；全屏布局下停靠在右侧成侧边栏
 - 直接对 Claude 说“放点周杰伦”，它会调用 `music` 工具帮你点歌
 - 音源可插拔：目前有哔哩哔哩（默认，国内直连）和 YouTube Music
 
@@ -69,7 +69,7 @@ claude --plugin-dir "D:/Project N2/cc-music/mod"
 | `/music queue` / `jump <n>` / `remove <n>` / `clear` | 队列 |
 | `/music lyrics` | 当前歌曲的歌词 |
 | `/music fav` / `favs` / `history` | 收藏当前歌曲 / 查看收藏 / 播放历史 |
-| `/music show` / `hide` | 显示 / 隐藏迷你播放器 |
+| `/music show` / `hide` | 显示 / 隐藏迷你播放器（会记住，和设置页里的开关是同一个） |
 | `/music providers` | 查看音源 |
 | `/music status` | 当前播放状态 |
 | `/music restart` | 重启后台播放器，保留队列和进度（升级 cc-music 后用） |
@@ -77,13 +77,24 @@ claude --plugin-dir "D:/Project N2/cc-music/mod"
 
 迷你播放器获得焦点（ctrl+x tab）后，`b` / `p` / `n` / `o` 分别是上一首 / 暂停 / 下一首 / 打开面板。
 
-面板的位置由 Claude Code 决定：全屏布局（默认；`CLAUDE_CODE_NO_FLICKER=0` 或 tmux 里是主屏幕布局）且终端宽 110 列以上时，停靠在对话右侧成为侧边栏，竖着排、歌词占满高度；否则放在输入框上方。全屏布局下 `/music <歌名>` 开始播放时也会自动打开侧边栏。
+面板的位置由 Claude Code 决定：全屏布局（默认；`CLAUDE_CODE_NO_FLICKER=0` 或 tmux 里是主屏幕布局）且终端宽 110 列以上时，停靠在对话右侧成为侧边栏，竖着排、歌词占满高度；否则放在输入框上方。全屏布局下 `/music <歌名>` 开始播放时也会自动打开侧边栏（可以在设置页关掉）。
 
-面板获得焦点后：`1`–`5` 切换标签页（正在播放、搜索、队列、收藏、历史），`p` / `n` / `b` 播放控制，`f` 收藏当前歌曲，Tab 和方向键在按钮间移动。封面只在终端里显示，用块字符画成：侧边栏拖得越宽、终端越高，封面越大越清楚。
+面板获得焦点后，Tab 和方向键在按钮间移动，回车按下。封面只在终端里显示，用块字符画成：侧边栏拖得越宽、终端越高，封面越大越清楚。
+
+## 设置
+
+面板右上角的「设置」打开设置页，再按一次回到正在播放：
+
+- **播放**：默认音源、启动音量
+- **界面**：迷你播放器、放歌时自动打开侧边栏、封面，三个开关。存在 Claude Code 给插件的存储里，下次会话还在
+- **YouTube Music**：cookies 文件的路径，回车保存，并提示文件在不在
+- **后台播放器**：空闲多久自动退出、mpv / yt-dlp / ffmpeg 找没找到、重启后台播放器、配置文件的位置
+
+「播放」「YouTube Music」「后台播放器」改的是下面的 `config.json`，立即生效（启动音量下次启动时生效），文件里的其他字段原样保留。
 
 ## 配置
 
-`~/.cc-music/config.json`（第一次启动时生成）：
+`~/.cc-music/config.json`（第一次启动时生成，大部分也能在设置页里改）：
 
 | 字段 | 默认 | 说明 |
 | --- | --- | --- |
@@ -95,14 +106,14 @@ claude --plugin-dir "D:/Project N2/cc-music/mod"
 | `cookiesFile` | 空 | 交给 yt-dlp `--cookies` 的 cookies.txt |
 | `idleExitMinutes` | `30` | 空闲多久自动退出，0 表示不退出 |
 
-改完配置后 `/music restart` 生效。日志在 `~/.cc-music/daemon.log`，收藏和播放历史在 `~/.cc-music/library.json`。
+手动改了配置文件后 `/music restart` 生效。日志在 `~/.cc-music/daemon.log`，收藏和播放历史在 `~/.cc-music/library.json`。
 
 ### YouTube Music 播放被拦截
 
 YouTube 会对部分网络出口（尤其是代理）要求“确认你不是机器人”，这时搜索正常但播放失败。
 解决办法是给 yt-dlp 提供登录过 YouTube 的 cookies：
 
-- 用浏览器扩展（如 Get cookies.txt LOCALLY）导出 `cookies.txt`，在配置里设置 `cookiesFile`
+- 用浏览器扩展（如 Get cookies.txt LOCALLY）导出 `cookies.txt`，在设置页的「cookies 文件」里填它的完整路径（即配置里的 `cookiesFile`）
 - 或者设置 `cookiesFromBrowser`（Windows 上 Chrome / Edge 的 cookies 加密后 yt-dlp 常常读不出，Firefox 更可靠）
 - 或者换一个代理节点
 

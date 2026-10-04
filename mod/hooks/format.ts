@@ -75,7 +75,7 @@ export function describeProviders(providers: ProviderInfo[]): string {
 }
 
 export const HELP = `用法：
-/music                 打开 cc-music 面板（正在播放、歌词、搜索、队列、收藏、历史）
+/music                 打开 cc-music 面板（正在播放、歌词、搜索、队列、收藏、历史；右上角是设置）
 /music <歌名>          搜索并立即播放第一个结果（插在当前歌曲之后）
 /music bili:<歌名>     指定音源搜索（bili: 哔哩哔哩，yt: YouTube Music）
 /music <序号>          播放上次搜索结果里的第几首

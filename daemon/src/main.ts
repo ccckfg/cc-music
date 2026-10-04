@@ -4,7 +4,7 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
 import { fileURLToPath } from 'node:url'
 
-import { loadConfig, resolveTool } from './config.ts'
+import { findFfmpeg, loadConfig } from './config.ts'
 import { CoverService } from './cover.ts'
 import { Library } from './library.ts'
 import { isHealthy, readDaemonInfo } from './instance.ts'
@@ -30,7 +30,7 @@ const registry = new ProviderRegistry(config)
 const library = new Library()
 const player = new Player(registry, config, track => library.addHistory(track))
 const lyrics = new LyricsService()
-const covers = new CoverService(resolveTool(config.ffmpegPath, 'CC_MUSIC_FFMPEG', 'ffmpeg', 'shims/ffmpeg.exe'))
+const covers = new CoverService(findFfmpeg(config))
 const token = randomBytes(24).toString('hex')
 
 let lastActivity = Date.now()
@@ -38,6 +38,7 @@ let isShuttingDown = false
 
 const server = createApiServer({
   token,
+  config,
   player,
   registry,
   lyrics,
