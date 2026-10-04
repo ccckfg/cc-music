@@ -1,16 +1,17 @@
 {
   "name": "cc-music",
+  "version": "0.4.0",
   "private": true,
   "description": "Claude Code 里的音乐播放器：mod（界面与联动）+ daemon（播放与音源）",
-  "workspaces": [
-    "daemon"
-  ],
   "scripts": {
     "daemon": "node daemon/src/main.ts",
-    "typecheck": "tsc -p daemon && tsc -p mod",
-    "test": "claude plugin test mod",
-    "validate": "claude plugin validate mod",
+    "typecheck": "tsc -p daemon && tsc -p .",
+    "test": "claude plugin test .",
+    "validate": "claude plugin validate .",
     "check": "npm run typecheck && npm run validate && npm test"
+  },
+  "dependencies": {
+    "youtubei.js": "18.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

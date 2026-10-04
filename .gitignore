@@ -3,5 +3,5 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# Claude Code 每次加载 mod 时生成的类型声明
-mod/.claude-plugin/types/
+# Claude Code 每次加载插件时生成的类型声明
+.claude-plugin/types/

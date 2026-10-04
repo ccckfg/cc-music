@@ -1,0 +1,11 @@
+{
+  // .claude-plugin/types/ 由 Claude Code 每次加载插件时生成（已 gitignore），
+  // 首次检出后先用 `claude --plugin-dir .` 或 `npm test` 加载一次
+  "extends": "./.claude-plugin/types/tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    // 还没有生成的 tsconfig 时，tsc 也不会往 hooks/ 里写 .js
+    "noEmit": true
+  },
+  "include": ["hooks", "types", "tests"]
+}

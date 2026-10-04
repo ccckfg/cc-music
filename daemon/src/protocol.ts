@@ -1,5 +1,5 @@
 // daemon 与 mod 之间的 HTTP 协议。
-// mod 那一侧的副本在 mod/types/index.d.ts：改这里时同步改那里。
+// mod 那一侧的副本在 types/index.d.ts：改这里时同步改那里。
 
 /** 一首可播放的曲目，由某个音源产出。 */
 export type Track = {

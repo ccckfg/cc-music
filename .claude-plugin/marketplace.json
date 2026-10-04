@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "cc-music",
+  "description": "在 Claude Code 里听音乐：/music 点歌、侧边栏播放器、Claude 帮你点歌",
+  "owner": {
+    "name": "ccckfg",
+    "url": "https://github.com/ccckfg"
+  },
+  "plugins": [
+    {
+      "name": "cc-music",
+      "source": "./",
+      "description": "在 Claude Code 里听音乐：/music 搜索播放，侧边栏里有封面、歌词和频谱，也可以直接让 Claude 帮你点歌",
+      "category": "entertainment",
+      "tags": ["music", "player", "mpv", "bilibili", "youtube-music", "lyrics"]
+    }
+  ]
+}

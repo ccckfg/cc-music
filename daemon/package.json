@@ -3,9 +3,6 @@
   "version": "0.4.0",
   "private": true,
   "type": "module",
-  "description": "cc-music 后台进程：管理 mpv、播放队列和音源",
-  "engines": { "node": ">=22.18" },
-  "dependencies": {
-    "youtubei.js": "^18.1.0"
-  }
+  "description": "cc-music 后台进程：管理 mpv、播放队列和音源。依赖装在仓库根目录（插件市场安装时 Claude Code 会自动装）",
+  "engines": { "node": ">=22.18" }
 }

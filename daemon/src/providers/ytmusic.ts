@@ -67,6 +67,10 @@ export class YouTubeMusicProvider implements MusicProvider {
     // youtubei.js 很大，用到才加载，daemon 启动快很多。
     // 默认 fetch 没有超时，网络异常时会一直挂起，所以换成带超时的
     this.client ??= import('youtubei.js')
+      .catch(() => {
+        // 插件市场安装时由 Claude Code 装好依赖；从源码运行时要自己 npm install
+        throw new Error('缺少依赖 youtubei.js：在 cc-music 目录里运行 npm install 后 /music restart')
+      })
       .then(({ Innertube }) =>
         Innertube.create({
           retrieve_player: false,

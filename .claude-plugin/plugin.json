@@ -1,0 +1,10 @@
+{
+  "name": "cc-music",
+  "version": "0.4.0",
+  "description": "在 Claude Code 里听音乐：/music 搜索播放，输入框上方的迷你播放器，Claude 也能帮你点歌",
+  "author": { "name": "ccckfg", "url": "https://github.com/ccckfg" },
+  "homepage": "https://github.com/ccckfg/cc-music",
+  "repository": "https://github.com/ccckfg/cc-music",
+  "keywords": ["music", "player", "mpv", "bilibili", "youtube-music", "lyrics"],
+  "types": "./types/index.d.ts"
+}

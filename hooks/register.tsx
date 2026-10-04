@@ -214,10 +214,9 @@ export const register: Register = on => {
         const node = (await $.env.get('CC_MUSIC_NODE')) ?? 'node'
         const configured = await $.env.get('CC_MUSIC_DAEMON')
         if (configured) return { node, script: configured }
-        // 插件目录可能是指向仓库的链接，先解析真实路径；daemon 在仓库的 daemon/ 下
+        // 仓库根目录就是插件目录，daemon 在它的 daemon/ 下；插件目录可能是链接，先解析真实路径
         const stat = await $.fs.stat(root, { resolve: true }).catch(() => undefined)
-        const repo = (stat?.realPath ?? root).replace(/[\\/]+$/, '').replace(/[\\/][^\\/]+$/, '')
-        const beside = `${repo}/daemon/src/launch.ts`
+        const beside = `${(stat?.realPath ?? root).replace(/[\\/]+$/, '')}/daemon/src/launch.ts`
         if (await $.fs.exists(beside)) return { node, script: beside }
         // 插件被拷到了别处（比如会话的 mods 目录）：用 daemon 上次启动时记下的位置
         try {
