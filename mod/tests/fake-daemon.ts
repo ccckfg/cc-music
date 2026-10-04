@@ -1,4 +1,4 @@
-import type { On, RenderElement } from 'claude-code'
+import type { JsonValue, On, RenderElement } from 'claude-code'
 import { expect, mock } from 'claude-code/testing'
 
 import type { ConfigPatch, ConfigResponse, LibraryResponse, PlayerCommand, PlayerSnapshot, Track } from '../types'
@@ -208,4 +208,17 @@ export function fakeDaemon(on: On, options: FakeOptions = {}): FakeDaemon {
     return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify(answer) } }
   })
   return { commands, searches, toasts, opened, library, clock, configPatches, store }
+}
+
+/** 测试里画出来的面板：能往它的 Client 发消息 */
+type Posting = { post: (data: JsonValue, scope?: { in: string }) => Promise<void> }
+
+/** 切到某个标签：和点标签栏一样，标签栏（Client）发 { action: 'tab' } */
+export async function openTab(pane: Posting, tab: string): Promise<void> {
+  await pane.post({ action: 'tab', tab }, { in: 'tabs' })
+}
+
+/** 点播放控制里的某个按钮：↻ ◀◀ ▶ ▶▶ ♥ */
+export async function control(pane: Posting, action: 'prev' | 'toggle' | 'next' | 'repeat' | 'favorite'): Promise<void> {
+  await pane.post({ action }, { in: 'transport' })
 }

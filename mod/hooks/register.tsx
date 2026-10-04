@@ -3,7 +3,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import type { PaneTab, PlayerCommand, PlayerSnapshot, Track } from '../types'
+import type { PaneTab, PlayerCommand, PlayerSnapshot, Prefs, Track } from '../types'
 import * as daemon from './daemon.ts'
 import { trackLabel } from './format.ts'
 import { errorText, type Host } from './host.ts'
@@ -25,6 +25,8 @@ import {
   toggleFavorite,
   type ToolInput,
 } from './music.ts'
+import type { FxMessage } from './fx/shared.ts'
+import { rampFor } from './theme.ts'
 import { MiniPlayer, PaneView, type PaneActions } from './view.tsx'
 
 // $.state 里的值：热重载后仍在，画面从这里读。引擎要求它们在使用它们的文件里声明
@@ -39,6 +41,7 @@ const coverAtom = atom({ plugin: 'cc-music', key: 'cover' } as const, null)
 const libraryAtom = atom({ plugin: 'cc-music', key: 'library' } as const, null)
 const daemonVersionAtom = atom({ plugin: 'cc-music', key: 'daemonVersion' } as const, null)
 const settingsAtom = atom({ plugin: 'cc-music', key: 'settings' } as const, null)
+const themeAtom = atom({ plugin: 'cc-music', key: 'theme' } as const, 'dark')
 
 /** $.store 里存偏好的键 */
 const PREFS_KEY = 'prefs'
@@ -175,6 +178,18 @@ function placementNote(isFullscreen: boolean, columns: number): string {
   return '已在输入框上方打开面板。当前是主屏幕布局（设置了 CLAUDE_CODE_NO_FLICKER=0 或在 tmux 里），只有全屏布局才能停靠成侧边栏。'
 }
 
+const NEXT_REPEAT: Record<PlayerSnapshot['repeat'], PlayerSnapshot['repeat']> = { off: 'all', all: 'one', one: 'off' }
+const PANE_TABS: readonly string[] = ['now', 'search', 'queue', 'favorites', 'history', 'settings']
+const PREF_NAMES: readonly string[] = ['showMiniPlayer', 'autoOpenSidebar', 'showCover']
+
+function isPaneTab(value: unknown): value is PaneTab {
+  return typeof value === 'string' && PANE_TABS.includes(value)
+}
+
+function isPrefName(value: unknown): value is keyof Prefs {
+  return typeof value === 'string' && PREF_NAMES.includes(value)
+}
+
 async function switchTab(host: Host, tab: PaneTab): Promise<void> {
   await host.setPaneTab(tab)
   if (tab === 'favorites' || tab === 'history') await refreshLibrary(host)
@@ -246,6 +261,9 @@ export const register: Register = on => {
     // 偏好存在 $.store 里，跨会话保留；读不到就用默认值
     const stored = await $.store.get(PREFS_KEY).catch(() => undefined)
     await update($, prefsAtom, () => parsePrefs(stored))
+    // 渐变色按主题挑；读不到就当暗色
+    const theme = (await $.config.list().catch(() => [])).find(row => row.key === 'theme')?.value
+    if (typeof theme === 'string') await update($, themeAtom, () => theme)
 
     await $.command.register({
       name: COMMAND,
@@ -313,6 +331,52 @@ export const register: Register = on => {
     }
   })
 
+  // 用户换主题：渐变色跟着换
+  on('config.set', { key: 'theme' }, async ($, e, next) => {
+    const result = await next(e)
+    if (typeof e.value === 'string') await update($, themeAtom, () => e.value as string)
+    return result
+  })
+
+  // 动效区域（fx/ 下的 Client）里的点击、拖动发来的消息
+  on('ui.message', async ($, e, next) => {
+    if (!e.module.includes('/fx/')) return next(e)
+    const message = e.data as FxMessage
+    switch (message.action) {
+      case 'tab':
+        if (isPaneTab(message.tab)) paneActions.setTab(message.tab)
+        break
+      case 'prev':
+      case 'next':
+      case 'toggle':
+        paneActions.command({ type: message.action })
+        break
+      case 'repeat': {
+        const player = await read($, playerAtom)
+        paneActions.command({ type: 'repeat', mode: NEXT_REPEAT[player?.repeat ?? 'off'] })
+        break
+      }
+      case 'favorite': {
+        const track = (await read($, playerAtom))?.current
+        if (track) paneActions.toggleFavorite(track)
+        break
+      }
+      case 'seek':
+        if (Number.isFinite(message.seconds)) paneActions.command({ type: 'seek', seconds: Math.max(0, message.seconds) })
+        break
+      case 'volume':
+        if (Number.isFinite(message.value)) paneActions.command({ type: 'volume', value: Math.max(0, Math.min(100, Math.round(message.value))) })
+        break
+      case 'pref':
+        if (isPrefName(message.name)) paneActions.changePrefs({ [message.name]: message.value === true })
+        break
+      case 'restart':
+        paneActions.restartDaemon()
+        break
+    }
+    return {}
+  })
+
   on('ui.close', async ($, e, next) => {
     if (e.id === PANE) await update($, paneOpenAtom, () => false)
     return next(e)
@@ -343,6 +407,7 @@ export const register: Register = on => {
         search: await read($, searchAtom),
         prefs: await read($, prefsAtom),
         settings: await read($, settingsAtom),
+        ramp: rampFor(await read($, themeAtom)),
         outdatedDaemon: daemonVersion && daemonVersion !== daemon.DAEMON_VERSION ? daemonVersion : undefined,
       },
       paneActions,

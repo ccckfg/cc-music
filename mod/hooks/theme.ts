@@ -117,3 +117,13 @@ export function wrapText(text: string, width: number): string[] {
   if (line.trim()) flush()
   return lines.length > 0 ? lines : ['']
 }
+
+/**
+ * 渐变色带，从深到亮四档：频谱、进度条、标题这些要“过渡”的地方用。
+ * Text 的颜色可以是原始颜色，但它不跟主题变，所以按主题挑一套；ANSI 主题只认主题键，退回到两档。
+ */
+export function rampFor(theme: string): string[] {
+  if (theme.includes('ansi')) return [C.accent, C.accent, C.accentSoft, C.accentSoft]
+  if (theme.startsWith('light')) return ['#9f4529', '#bd5a3b', '#d77757', '#e48b69']
+  return ['#ad5132', '#d77757', '#eb9f7f', '#f6c7a6']
+}

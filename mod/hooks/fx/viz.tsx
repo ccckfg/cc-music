@@ -4,7 +4,7 @@ import type { ClientModule } from 'claude-code'
 
 import type { PlayerSnapshot } from '../../types'
 import { C } from '../theme.ts'
-import { clamp01, instanceOf, noise, runs, seedOf, startFrames } from './shared.ts'
+import { clamp01, instanceOf, noise, rampAt, runs, seedOf, startFrames } from './shared.ts'
 
 export type VizProps = {
   status: PlayerSnapshot['status'];
@@ -13,6 +13,8 @@ export type VizProps = {
   rows: number;
   /** 换歌时换一种样子 */
   seed: string;
+  /** 渐变色带（深到亮）：柱子越高越亮 */
+  ramp: string[];
 }
 
 const MS = 90
@@ -41,8 +43,8 @@ const Viz: ClientModule<VizProps, number> = (props, surface) => {
       const level = state.levels[i] ?? REST
       const eighths = Math.round(level * rows * 8) - row * 8
       const block = BLOCKS[Math.max(row === 0 ? 1 : 0, Math.min(8, eighths))] ?? ' '
-      // 播放时：高处的亮一档；暂停时整排淡掉
-      const color = !isPlaying ? C.faint : level > 0.62 && (rows === 1 || row === rows - 1) ? C.accentSoft : C.accent
+      // 播放时按高度取渐变色（上面一行再亮一点）；暂停时整排淡掉
+      const color = !isPlaying ? C.faint : rampAt(props.ramp, level * 0.85 + (row > 0 ? 0.25 : 0))
       cells.push([block, color])
     }
     lines.push(cells)

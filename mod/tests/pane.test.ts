@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { fakeDaemon, FULLSCREEN, music, PANE, RICE, SESSION, SUNNY } from './fake-daemon.ts'
+import { control, fakeDaemon, FULLSCREEN, music, openTab, PANE, RICE, SESSION, SUNNY } from './fake-daemon.ts'
 
 describe('侧边栏', () => {
   test('全屏布局下 /music 停靠成侧边栏；搜歌播放也会打开它，主屏幕布局下不会', async ($, on) => {
@@ -64,9 +64,9 @@ describe('cc-music 面板', () => {
       if (surface === 'terminal') expect(Number(raster?.props['columns'])).toBeGreaterThanOrEqual(12)
       else expect(raster).toBeUndefined()
 
-      await pane.press({ key: 'toggle' })
+      await control(pane, 'toggle')
       expect(fake.commands.at(-1)).toEqual({ type: 'toggle' })
-      await pane.press({ key: 'toggle' })
+      await control(pane, 'toggle')
       await pane.unmount()
     }
   })
@@ -77,7 +77,7 @@ describe('cc-music 面板', () => {
     await $.command.run(music(''))
 
     const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-    await pane.press({ key: 'tab-search' })
+    await openTab(pane, 'search')
     await pane.input({ key: 'query', text: 'bili:稻香' })
     expect(fake.searches).toEqual(['bilibili|稻香'])
     expect(await pane.find({ key: 'result-1-play', text: '稻香' })).toBeDefined()
@@ -97,13 +97,13 @@ describe('cc-music 面板', () => {
     await $.command.run(music(''))
 
     const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-    // 没收藏时 ♥ 是淡的，收藏后亮起来
-    expect((await pane.find({ key: 'favorite', text: '♥' }))?.props['dimColor']).toBe(true)
-    await pane.press({ key: 'favorite' })
+    // 播放控制里的 ♥：没收藏时是淡的，收藏后变成 Claude 橙
+    expect((await pane.find({ type: 'Text', text: '♥', in: 'transport' }))?.props['color']).toBe('subtle')
+    await control(pane, 'favorite')
     expect(fake.library.favorites).toEqual([SUNNY])
-    expect((await pane.find({ key: 'favorite', text: '♥' }))?.props['dimColor']).toBe(false)
+    expect((await pane.find({ type: 'Text', text: '♥', in: 'transport' }))?.props['color']).toBe('claude')
 
-    await pane.press({ key: 'tab-favorites' })
+    await openTab(pane, 'favorites')
     expect(await pane.find({ key: 'fav-0-play', text: '晴天' })).toBeDefined()
     await pane.press({ key: 'fav-0-unfav' })
     expect(fake.library.favorites).toEqual([])
@@ -119,7 +119,7 @@ describe('cc-music 面板', () => {
     await $.command.run(music(''))
 
     const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-    await pane.press({ key: 'tab-queue' })
+    await openTab(pane, 'queue')
     expect(await pane.find({ type: 'Text', text: /2 首/ })).toBeDefined()
     await pane.press({ key: 'queue-1-jump' })
     expect(fake.commands.at(-1)).toEqual({ type: 'jump', index: 1 })

@@ -184,6 +184,8 @@ declare module 'claude-code' {
       daemonVersion: string | null;
       /** 设置页的内容；还没打开过设置页时为 null */
       settings: SettingsState | null;
+      /** Claude Code 的主题名（dark、light、dark-ansi…），挑渐变色用 */
+      theme: string;
     };
   }
 }

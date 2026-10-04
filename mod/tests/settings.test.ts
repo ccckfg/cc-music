@@ -1,14 +1,14 @@
 import { expect, test } from 'claude-code/testing'
 
-import { BAND, fakeDaemon, FULLSCREEN, music, PANE, SESSION } from './fake-daemon.ts'
+import { BAND, fakeDaemon, FULLSCREEN, music, openTab, PANE, SESSION } from './fake-daemon.ts'
 
-test('从「设置」进入：读出 daemon 的配置，改默认音源、启动音量和空闲退出；再按一次回到正在播放', async ($, on) => {
+test('从「设置」进入：读出 daemon 的配置，改默认音源、启动音量和空闲退出', async ($, on) => {
   const fake = fakeDaemon(on)
   await $.session.start(SESSION)
   await $.command.run(music(''))
 
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await pane.press({ key: 'tab-settings' })
+  await openTab(pane, 'settings')
   // 选中的项是橙色的 ● 文字，没选中的是 ○ 按钮；空闲退出是 ‹ 30 分钟 ›
   expect(await pane.find({ type: 'Text', text: '● 哔哩哔哩' })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: '30 分钟' })).toBeDefined()
@@ -26,7 +26,7 @@ test('从「设置」进入：读出 daemon 的配置，改默认音源、启动
   await pane.press({ key: 'idle-next' })
   expect(fake.configPatches.at(-1)).toEqual({ idleExitMinutes: 10 })
 
-  await pane.press({ key: 'tab-settings' })
+  await openTab(pane, 'now')
   expect(await pane.find({ type: 'Text', text: /还没有在播放/ })).toBeDefined()
   await pane.unmount()
 })
@@ -37,7 +37,7 @@ test('YouTube 的 cookies：填路径回车保存，提示文件在不在', asyn
   await $.command.run(music(''))
 
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await pane.press({ key: 'tab-settings' })
+  await openTab(pane, 'settings')
   expect(await pane.find({ type: 'Text', text: /没有配置/ })).toBeDefined()
 
   await pane.input({ key: 'cookies', text: 'C:/Users/me/missing.txt' })
@@ -58,12 +58,12 @@ test('界面偏好：关掉迷你播放器、放歌时打开侧边栏和封面�
 
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await pane.find({ type: 'Raster' })).toBeDefined()
-  await pane.press({ key: 'tab-settings' })
-  await pane.press({ key: 'mini-player-false' })
-  await pane.press({ key: 'auto-sidebar-false' })
-  await pane.press({ key: 'cover-false' })
+  await openTab(pane, 'settings')
+  await pane.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'switch-mini-player' })
+  await pane.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'switch-auto-sidebar' })
+  await pane.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'switch-cover' })
   expect(fake.store.get('prefs')).toEqual({ showMiniPlayer: false, autoOpenSidebar: false, showCover: false })
-  await pane.press({ key: 'tab-settings' })
+  await openTab(pane, 'now')
   expect(await pane.find({ type: 'Raster' })).toBeUndefined()
   await pane.unmount()
 
@@ -96,7 +96,7 @@ test('保存失败：设置页显示原因，原来的值不变', async ($, on) 
   await $.command.run(music(''))
 
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await pane.press({ key: 'tab-settings' })
+  await openTab(pane, 'settings')
   await pane.press({ key: 'idle-prev' })
   expect(await pane.find({ type: 'Text', text: /写不了 config\.json/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: '30 分钟' })).toBeDefined()

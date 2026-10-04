@@ -91,3 +91,24 @@ export function runs(cells: [string, string | undefined][]): { text: string; col
 export function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value))
 }
+
+/** 动效区域发给 hooks 的消息（surface.post → ui.message） */
+export type FxMessage =
+  | { action: 'tab'; tab: string }
+  | { action: 'prev' | 'toggle' | 'next' | 'repeat' | 'favorite' | 'restart' }
+  | { action: 'seek'; seconds: number }
+  | { action: 'volume'; value: number }
+  | { action: 'pref'; name: string; value: boolean }
+
+/** 一排可点的东西：每项的起止列；x 落在哪项上 */
+export type Span = { start: number; end: number }
+
+export function hit<T extends Span>(spans: T[], x: number): T | undefined {
+  return spans.find(span => x >= span.start && x < span.end)
+}
+
+/** 渐变：t ∈ [0, 1] 落在色带的哪一档 */
+export function rampAt(ramp: string[], t: number): string | undefined {
+  if (ramp.length === 0) return undefined
+  return ramp[Math.max(0, Math.min(ramp.length - 1, Math.floor(clamp01(t) * ramp.length)))]
+}

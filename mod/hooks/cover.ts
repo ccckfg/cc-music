@@ -138,8 +138,25 @@ function taps(start: number, length: number, count: number, size: number): [numb
   return result
 }
 
-/** 每格 64 个采样点分成前景、背景两组，挑颜色误差最小的字符，写成 [码点, 前景, 背景]。 */
+/** Raster 里“终端默认颜色”的写法 */
+const DEFAULT_COLOR = 0x01000000
+
+/** 四个角各用朝里的象限字符：左上 ▗、右上 ▖、左下 ▝、右下 ▘ */
+function cornerOf(row: number, col: number, rows: number, columns: number): number | undefined {
+  const isTop = row === 0
+  const isBottom = row === rows - 1
+  const isLeft = col === 0
+  const isRight = col === columns - 1
+  if (isTop && isLeft) return 0x2597
+  if (isTop && isRight) return 0x2596
+  if (isBottom && isLeft) return 0x259d
+  if (isBottom && isRight) return 0x2598
+  return undefined
+}
+
+/** 每格 64 个采样点分成前景、背景两组，挑颜色误差最小的字符，写成 [码点, 前景, 背景]；够大时四个角画成圆角。 */
 function encodeCells(samples: Pixels, columns: number, rows: number): string {
+  const isRounded = columns >= 6 && rows >= 3
   const bytes = new Uint8Array(columns * rows * 12)
   const put = (offset: number, value: number) => {
     bytes[offset] = value & 255
@@ -183,11 +200,19 @@ function encodeCells(samples: Pixels, columns: number, rows: number): string {
         if (score > best.score) best = { score, glyph, sr, sg, sb }
       }
 
+      const offset = (row * columns + col) * 12
+      const corner = isRounded ? cornerOf(row, col, rows, columns) : undefined
+      if (corner !== undefined) {
+        // 圆角：角上那格只画朝里的四分之一，其余透出终端背景
+        put(offset, corner)
+        put(offset + 4, rgb(tr / SAMPLES, tg / SAMPLES, tb / SAMPLES))
+        put(offset + 8, DEFAULT_COLOR)
+        continue
+      }
       const n = best.glyph.samples.length
       const m = SAMPLES - n
       const foreground = rgb(best.sr / n, best.sg / n, best.sb / n)
       const background = m > 0 ? rgb((tr - best.sr) / m, (tg - best.sg) / m, (tb - best.sb) / m) : foreground
-      const offset = (row * columns + col) * 12
       put(offset, best.glyph.codepoint)
       put(offset + 4, foreground)
       put(offset + 8, background)
